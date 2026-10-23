@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from pseval.data import CASE_KEY, TIMESTAMP_KEY
+from pseval.data import CASE_KEY, INTER_EVENT_MINUTES_KEY, TIMESTAMP_KEY
 
 
 def sort_log(log: pd.DataFrame) -> pd.DataFrame:
@@ -18,6 +18,20 @@ def sort_log(log: pd.DataFrame) -> pd.DataFrame:
     log = log.assign(_case_rank=log[CASE_KEY].map(rank))
     log = log.sort_values(by=['_case_rank', TIMESTAMP_KEY], kind='mergesort')
     return log.drop(columns='_case_rank').reset_index(drop=True)
+
+
+def add_inter_event_minutes(log: pd.DataFrame) -> pd.DataFrame:
+    """Add the minutes since the previous event of the same case, zero at a case's first event.
+
+    Args:
+        log: The log, each case's rows consecutive and in time order.
+
+    Returns:
+        A copy with the `INTER_EVENT_MINUTES_KEY` column in float64.
+    """
+    delta = log.groupby(CASE_KEY, sort=False)[TIMESTAMP_KEY].diff()
+    minutes = (delta.dt.total_seconds() / 60.0).fillna(0.0).astype(np.float64)
+    return log.assign(**{INTER_EVENT_MINUTES_KEY: minutes})
 
 
 def out_of_time_split(

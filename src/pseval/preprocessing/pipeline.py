@@ -12,7 +12,7 @@ from pseval.preprocessing.filters import (
     drop_cases_by_length,
     drop_cases_starting_late,
 )
-from pseval.preprocessing.split import out_of_time_split, sort_log
+from pseval.preprocessing.split import add_inter_event_minutes, out_of_time_split, sort_log
 
 
 def read_original(spec: DatasetSpec, path: Path) -> pd.DataFrame:
@@ -46,7 +46,8 @@ def split_log(
 
     Drops the cases running longer than the duration percentile and longer than the length
     percentile, both read off the log as read, then the cases starting too late to be seen
-    finishing, read off what the outlier filters left. Sorts the rest and splits it out of time.
+    finishing, read off what the outlier filters left. Sorts the rest, adds each event's
+    inter-event minutes, and splits it out of time.
 
     Returns:
         `(train, validation, test, first_cuts, max_length)`: the splits and first cuts as
@@ -62,7 +63,7 @@ def split_log(
     )
     log = drop_cases_starting_late(log, min_observed_days=min_observed_days)
     train, validation, test, first_cuts = out_of_time_split(
-        sort_log(log),
+        add_inter_event_minutes(sort_log(log)),
         validation_fraction=spec.validation_fraction,
         test_fraction=spec.test_fraction,
         seed=spec.split_seed,

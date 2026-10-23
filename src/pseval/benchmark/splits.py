@@ -40,7 +40,12 @@ def read_split(path: Path, *, text_columns: Collection[str]) -> Log:
         The split, with the first cuts its `PREFIX_START_KEY` column states when it has one.
     """
     columns = {CASE_KEY, ACTIVITY_KEY, RESOURCE_KEY, *text_columns}
-    events = pd.read_csv(path, sep=CSV_SEPARATOR, dtype=dict.fromkeys(columns, str))
+    events = pd.read_csv(
+        path,
+        sep=CSV_SEPARATOR,
+        dtype=dict.fromkeys(columns, str),
+        float_precision='round_trip',
+    )
     events[TIMESTAMP_KEY] = pd.to_datetime(events[TIMESTAMP_KEY], format='mixed')
     if PREFIX_START_KEY not in events.columns:
         return Log(events)
