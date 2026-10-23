@@ -6,30 +6,20 @@ from rapidfuzz import process
 from rapidfuzz.distance import DamerauLevenshtein
 from scipy.spatial.distance import cdist
 
-# Sequence boundaries of the sequence metrics, distinct and below every activity code.
-START_CODE = '\x02'
+from pseval.metrics.vocabulary import END_CODE, START_CODE
 
 
-END_CODE = '\x03'
-
-
-def sequence_similarity(predicted: str, true: str) -> float:
-    """Return the normalized Damerau-Levenshtein similarity with a shared terminal token.
+def damerau_levenshtein_distances(queries: Sequence[str], choices: Sequence[str]) -> np.ndarray:
+    """Return pairwise normalized Damerau-Levenshtein distances with a shared terminal token.
 
     Sequences are strings spelling one activity per character.
     """
-    return DamerauLevenshtein.normalized_similarity(predicted + END_CODE, true + END_CODE)
-
-
-def dld_distances(queries: Sequence[str], choices: Sequence[str]) -> np.ndarray:
-    """Return pairwise normalized Damerau-Levenshtein distances with a shared terminal token."""
-    similarities = process.cdist(
+    return process.cdist(
         queries=[sequence + END_CODE for sequence in queries],
         choices=[sequence + END_CODE for sequence in choices],
-        scorer=DamerauLevenshtein.normalized_similarity,
+        scorer=DamerauLevenshtein.normalized_distance,
         dtype=np.float64,
     )
-    return np.subtract(1.0, similarities, out=similarities)
 
 
 def exact_distances(

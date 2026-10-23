@@ -10,22 +10,18 @@ def energy_score(draw_counts: np.ndarray, distances: np.ndarray) -> float:
     distance matrix keeps one row per distinct value.
 
     Args:
-        draw_counts: `[U]` draws of each distinct value.
+        draw_counts: `[U]` draws of each distinct value, summing to at least two.
         distances: `[U, U + 1]` distances from each distinct value to every distinct value, then
             to the observation.
 
     Returns:
         Draw-weighted mean distance to the observation minus the fair diversity correction over
-        pairs of different draws. No draws score 1.0; one draw has no correction.
+        pairs of different draws.
     """
     draw_count = float(draw_counts.sum())
-    if draw_count <= 0.0:
-        return 1.0
     accuracy = float(draw_counts @ distances[:, -1]) / draw_count
-    if draw_count > 1:
-        pair_sum = float(draw_counts @ distances[:, :-1] @ draw_counts)
-        return accuracy - pair_sum / (2.0 * draw_count * (draw_count - 1.0))
-    return accuracy
+    pair_sum = float(draw_counts @ distances[:, :-1] @ draw_counts)
+    return accuracy - pair_sum / (2.0 * draw_count * (draw_count - 1.0))
 
 
 def mean_between_draws(draw_counts: np.ndarray, distances: np.ndarray) -> float:
@@ -68,24 +64,19 @@ def crps(draws: np.ndarray, truth: float) -> float:
     when a few draws are orders of magnitude larger than the rest.
 
     Args:
-        draws: Numeric samples shaped [S], with repeated draws retained.
+        draws: `[K]` numeric samples, at least two, with repeated draws retained.
         truth: Observed quantity, in the same units as the samples.
 
     Returns:
-        Fair absolute-distance energy score in the input units. Returns zero with no draws. A
-        singleton gives absolute error.
+        Fair absolute-distance energy score in the input units.
     """
     draw_count = len(draws)
-    if draw_count == 0:
-        return 0.0
-    if draw_count == 1:
-        return float(abs(draws[0] - truth))
-    ordered = np.sort(draws)  # [S]
-    lower, upper = ordered[:-1], ordered[1:]  # [S - 1]
-    below_truth = np.clip(np.minimum(upper, truth) - lower, 0.0, None)  # [S - 1]
-    above_truth = np.clip(upper - np.maximum(lower, truth), 0.0, None)  # [S - 1]
+    ordered = np.sort(draws)  # [K]
+    lower, upper = ordered[:-1], ordered[1:]  # [K - 1]
+    below_truth = np.clip(np.minimum(upper, truth) - lower, 0.0, None)  # [K - 1]
+    above_truth = np.clip(upper - np.maximum(lower, truth), 0.0, None)  # [K - 1]
     # Number of draws at or below each gap between consecutive sorted draws.
-    at_or_below = np.arange(1, draw_count, dtype=np.float64)  # [S - 1]
+    at_or_below = np.arange(1, draw_count, dtype=np.float64)  # [K - 1]
     at_or_above = draw_count - at_or_below
     between = (
         at_or_below * (at_or_below - 1.0) * below_truth
@@ -96,28 +87,20 @@ def crps(draws: np.ndarray, truth: float) -> float:
 
 
 def mae(draws: np.ndarray, truth: float) -> float:
-    """Return the mean absolute error of scalar draws, the accuracy term of the CRPS.
-
-    No draws give zero.
-    """
-    if not len(draws):
-        return 0.0
+    """Return the mean absolute error of scalar draws, the accuracy term of the CRPS."""
     return float(np.abs(draws - truth).mean())
 
 
 def crps_spread(draws: np.ndarray) -> float:
-    """Return half the mean absolute difference over pairs of different draws.
+    """Return half the mean absolute difference over pairs of different draws, at least two.
 
     It is the spread term of the fair CRPS, which equals the mean absolute error minus it. The
-    sum over pairs is taken over gaps between sorted samples with nonnegative weights. Fewer
-    than two draws give zero.
+    sum over pairs is taken over gaps between sorted samples with nonnegative weights.
     """
     draw_count = len(draws)
-    if draw_count < 2:
-        return 0.0
-    gaps = np.diff(np.sort(draws))  # [S - 1]
+    gaps = np.diff(np.sort(draws))  # [K - 1]
     # Each gap separates the draws at or below it from those above it.
-    at_or_below = np.arange(1, draw_count, dtype=np.float64)  # [S - 1]
+    at_or_below = np.arange(1, draw_count, dtype=np.float64)  # [K - 1]
     pair_sum = float((at_or_below * (draw_count - at_or_below) * gaps).sum())
     return pair_sum / (draw_count * (draw_count - 1.0))
 
@@ -129,13 +112,12 @@ def randomized_pit(draws: np.ndarray, truth: float, *, noise: float) -> float:
     on [0, 1] for a calibrated forecast even when draws and truth are discrete.
 
     Args:
-        draws: Numeric samples shaped [S], with repeated draws retained.
+        draws: `[K]` numeric samples, with repeated draws retained.
         truth: Observed quantity, in the same units as the samples.
         noise: Uniform value on [0, 1] that places the truth among its ties.
 
     Returns:
-        (draws below truth + noise * (draws equal to truth + 1)) / (S + 1). No draws give the
-        noise itself.
+        (draws below truth + noise * (draws equal to truth + 1)) / (K + 1).
     """
     below = float((draws < truth).sum())
     ties = float((draws == truth).sum())
@@ -149,18 +131,11 @@ def kernel_score(gram: np.ndarray) -> float:
     over pairs of different draws.
 
     Args:
-        gram: `[S + 1, S + 1]` kernel between every pair of draws, the observation last.
-
-    Returns:
-        The score. No draws score 1.0; a single draw is read as a point mass, scoring
-        `1 - k(x, y)`.
+        gram: `[K + 1, K + 1]` kernel between every pair of at least two draws, the observation
+            last.
     """
     draws = len(gram) - 1
-    if draws == 0:
-        return 1.0
     to_truth = float(gram[:draws, draws].mean())
-    if draws == 1:
-        return 1.0 - to_truth
     between = gram[:draws, :draws]
     pairs = (float(between.sum()) - float(between.trace())) / (draws * (draws - 1))
     return 0.5 * pairs - to_truth + 0.5

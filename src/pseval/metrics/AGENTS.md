@@ -1,8 +1,9 @@
 # Metrics Guide
 
-Metrics score each prefix as one probabilistic forecast, represented by its draws, against the
-observed suffix. `Scorer` holds the protocol fitted on train and scores batches of `Generation`
-records in memory; file handling belongs to `generation` and `scoring`.
+Metrics score each forecast of a given prefix, represented by its draws, against the single
+observed suffix. `Scorer` scores batches of `Generation` records in memory; file handling
+belongs to `generation` and `scoring`. In shape comments, `K` counts a prefix's draws and `U` its
+distinct activity suffixes.
 
 ## Layout
 
@@ -21,6 +22,10 @@ records in memory; file handling belongs to `generation` and `scoring`.
 - `PrefixScores` field order is the scores file column order. Adding a metric means a commented
   field there and an entry in one `definitions/` function; it changes the scores schema, so older
   scores files stop loading.
+- Every scored prefix has at least `MIN_DRAWS` draws, so neither definitions nor helpers guard
+  smaller draw counts.
+- A `definitions/` function unpacks its inputs and converts units at the top, names only values
+  that several columns use, and returns one expression per column in `PrefixScores` order.
 - `PROPER_SCORES` are the fair scoring rules models are ranked on, lower is better. Every other
   column is a diagnostic and never ranks.
 - `PreparedPrefix.of_batch` makes one Declare checker call and one signature kernel call per

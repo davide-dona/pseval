@@ -34,11 +34,11 @@ class Draws:
 
     # The distinct suffixes, in the order they were first drawn.
     suffixes: tuple[str, ...]
-    # [S] Which of them each draw took, in draw order.
+    # [K] Which of them each draw took, in draw order.
     taken: np.ndarray
     # [E] float64 inter-event minutes of every draw, draw after draw.
     inter_event_time_minutes: np.ndarray
-    # [S] Whether each draw was closed at the length cap without ending.
+    # [K] Whether each draw was closed at the length cap without ending.
     truncated: np.ndarray
 
     @classmethod
@@ -65,18 +65,18 @@ class Draws:
 
     @cached_property
     def lengths(self) -> np.ndarray:
-        """[S] How many events each draw holds."""
+        """[K] How many events each draw holds."""
         suffix_lengths = np.fromiter(map(len, self.suffixes), np.int64, len(self.suffixes))
         return suffix_lengths[self.taken]
 
     @cached_property
     def offsets(self) -> np.ndarray:
-        """[S + 1] Where each draw's times start in `inter_event_time_minutes`, then their end."""
+        """[K + 1] Where each draw's times start in `inter_event_time_minutes`, then their end."""
         return np.concatenate([np.zeros(1, np.int64), np.cumsum(self.lengths)])
 
     @property
     def remaining_time_minutes(self) -> np.ndarray:
-        """[S] Each draw's inter-event minutes summed in event order."""
+        """[K] Each draw's inter-event minutes summed in event order."""
         draw_of_event = np.repeat(np.arange(len(self)), self.lengths)  # [E]
         return np.bincount(
             draw_of_event, weights=self.inter_event_time_minutes, minlength=len(self)
@@ -88,9 +88,8 @@ class Draws:
         return np.bincount(self.taken, minlength=len(self.suffixes)).astype(np.float64)
 
     def mean(self, values: Sequence[float] | np.ndarray) -> float:
-        """Return the draw-weighted mean of one value per distinct suffix, zero without draws."""
-        draw_count = len(self)
-        return float(self.counts @ values) / draw_count if len(values) and draw_count else 0.0
+        """Return the draw-weighted mean of one value per distinct suffix."""
+        return float(self.counts @ values) / len(self)
 
 
 @dataclass(frozen=True, eq=False)

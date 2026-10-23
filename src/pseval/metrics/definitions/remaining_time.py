@@ -8,17 +8,12 @@ MINUTES_PER_DAY = 1440.0
 
 def remaining_time(prefix: PreparedPrefix) -> dict[str, float]:
     """The remaining-time columns of one prefix."""
-    draws, truth = prefix.remaining_times, prefix.true_remaining_time
-    if draws.size:
-        log_error = float(
-            np.log1p(draws / MINUTES_PER_DAY).mean() - np.log1p(truth / MINUTES_PER_DAY)
-        )
-    else:
-        log_error = 0.0
+    days = prefix.remaining_times / MINUTES_PER_DAY  # [K]
+    true_days = prefix.true_remaining_time / MINUTES_PER_DAY
     return {
-        'remaining_time_crps_days': crps(draws, truth) / MINUTES_PER_DAY,
-        'remaining_time_log_error': log_error,
-        'remaining_time_crps_error_days': mae(draws, truth) / MINUTES_PER_DAY,
-        'remaining_time_crps_spread_days': crps_spread(draws) / MINUTES_PER_DAY,
-        'remaining_time_truth_quantile': randomized_pit(draws, truth, noise=prefix.pit_noise),
+        'remaining_time_crps_days': crps(days, true_days),
+        'remaining_time_crps_error_days': mae(days, true_days),
+        'remaining_time_crps_spread_days': crps_spread(days),
+        'remaining_time_log_error': float(np.log1p(days).mean() - np.log1p(true_days)),
+        'remaining_time_truth_quantile': randomized_pit(days, true_days, noise=prefix.pit_noise),
     }

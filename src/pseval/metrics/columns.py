@@ -14,7 +14,7 @@ class PrefixScores:
     """Every metric of one prefix. Field order is the scores column order.
 
     DLS is the normalized Damerau-Levenshtein similarity and DLD its distance, both with a shared
-    terminal token. Draw-weighted means over no draws are zero.
+    terminal token.
     """
 
     # Fair kernel score of the joint activity and time draws, under the cosine-normalized
@@ -23,11 +23,10 @@ class PrefixScores:
 
     # Draw-weighted DLS of the activity suffixes to the observed one.
     dls_sample_mean: float
-    # Mean DLD over ordered pairs of different draws; zero with fewer than two draws.
+    # Mean DLD over ordered pairs of different draws.
     activity_dld_spread: float
     # The DLD spread minus the mean DLD to the observed suffix. For a calibrated forecast the
-    # observed suffix is one more draw, so it is zero; negative is overconfident. Zero with fewer
-    # than two draws.
+    # observed suffix is one more draw, so it is zero; negative is overconfident.
     activity_spread_error_gap: float
     # Distinct activity suffixes per draw, 1.0 when every draw differs.
     unique_suffix_ratio: float
@@ -61,13 +60,8 @@ class PrefixScores:
     # Randomized PIT of the observed remaining time among the draws.
     remaining_time_truth_quantile: float
 
-    # Draw-weighted share of the Declare constraints the full trace satisfies, its difference to
-    # the observed trace's, and the observed trace's.
-    conformance_sample_mean: float
-    conformance_share_bias: float
-    conformance_observed: float
-    # Draw-weighted rate of traces satisfying every constraint, and 1.0 when the observed one
-    # does.
+    # Draw-weighted rate of full traces satisfying every Declare constraint, and 1.0 when the
+    # observed one does.
     full_conformance_sample_rate: float
     full_conformance_observed: float
 

@@ -17,14 +17,13 @@ PIT_SEED = 42
 class PreparedPrefix:
     """Decoded values and constraint checks shared by every metric for one prefix.
 
-    Sample conformance arrays have shape [U], one entry per distinct suffix in suffix order;
-    generation sample counts give their draw multiplicities. A conformance share is the fraction
-    of constraints the full trace satisfies, and full conformance is 1.0 when it satisfies them
-    all. Suffix lengths and remaining times have shape [S], one entry per draw, and are compared
-    with the scalar truth. Times are in minutes. The signature Gram matrix has shape
-    [S + 1, S + 1]: the normalized signature kernel between every pair of draws, with the
-    observed suffix last. The PIT noise is one uniform on [0, 1] drawn from the prefix key alone,
-    so it does not depend on the worker or batch scoring the prefix.
+    Sample full conformance has shape [U], one entry per distinct suffix in suffix order;
+    generation sample counts give their draw multiplicities. Full conformance is 1.0 when the
+    full trace satisfies every constraint. Suffix lengths and remaining times have shape [K], one
+    entry per draw, and are compared with the scalar truth. Times are in minutes. The signature
+    Gram matrix has shape [K + 1, K + 1]: the normalized signature kernel between every pair of
+    draws, with the observed suffix last. The PIT noise is one uniform on [0, 1] drawn from the
+    prefix key alone, so it does not depend on the worker or batch scoring the prefix.
     """
 
     generation: Generation
@@ -34,9 +33,7 @@ class PreparedPrefix:
     true_remaining_time: float
     pit_noise: float
     signature_gram: np.ndarray
-    sample_conformance_share: np.ndarray
     sample_full_conformance: np.ndarray
-    observed_conformance_share: float
     observed_full_conformance: float
 
     @classmethod
@@ -61,29 +58,24 @@ class PreparedPrefix:
         if not generations:
             return []
         # Each prefix contributes its distinct sampled traces followed by its observed one.
-        conformance = checker.check(
+        full = checker.check(
             [
                 generation.prefix_activities + suffix
                 for generation in generations
                 for suffix in (*generation.samples.suffixes, generation.truth.activities)
             ]
-        )
-        share, full = conformance.share, conformance.full
+        ).full
         grams = kernel.grams(_suffix_paths(generations, kernel=kernel))
         prepared = []
         start = 0
         for generation, gram in zip(generations, grams, strict=True):
             stop = start + len(generation.samples.suffixes) + 1
-            prepared.append(
-                cls._of(generation, share=share[start:stop], full=full[start:stop], gram=gram)
-            )
+            prepared.append(cls._of(generation, full=full[start:stop], gram=gram))
             start = stop
         return prepared
 
     @classmethod
-    def _of(
-        cls, generation: Generation, *, share: np.ndarray, full: np.ndarray, gram: np.ndarray
-    ) -> Self:
+    def _of(cls, generation: Generation, *, full: np.ndarray, gram: np.ndarray) -> Self:
         """Prepare one prefix from the conformance of its sampled traces, then its observed one."""
         samples = generation.samples
         truth = generation.truth
@@ -98,9 +90,7 @@ class PreparedPrefix:
             true_remaining_time=truth.remaining_time_minutes,
             pit_noise=float(noise),
             signature_gram=gram,
-            sample_conformance_share=share[:-1],
             sample_full_conformance=full[:-1],
-            observed_conformance_share=float(share[-1]),
             observed_full_conformance=float(full[-1]),
         )
 

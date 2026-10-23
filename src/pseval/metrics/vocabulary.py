@@ -7,6 +7,11 @@ UNK = 'UNK'
 # Start of the Unicode private use area, where activity codes are drawn from.
 _FIRST_CODE = 0xE000
 
+# Boundaries the sequence metrics pad spelled suffixes with, distinct and below every activity
+# code.
+START_CODE = '\x02'
+END_CODE = '\x03'
+
 
 class ActivityCodes:
     """Spell activity names as one character each, `chr(0xE000 + i)` for vocabulary entry `i`.
