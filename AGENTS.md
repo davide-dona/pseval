@@ -6,10 +6,10 @@ number means, from splits to metrics. Training and selection belong to the model
 
 ## Safety and Correctness
 
-- Do not build bundles, generate, or score full benchmarks locally. Verify with small, disposable
-  checks under `tmp/` and remove them afterward. Do not add tests unless Davide asks for them.
+- Do not add tests unless Davide asks for them.
 - Never expose a model to anything past a prefix's last event, and fit protocol state on the train
   split only.
+- Keep each module specialized and small, and avoid cross-cutting concerns.
 - Use Python 3.13 typing, four-space indentation, single quotes, 100-character lines, and no
   comment on the first line of a file. Run `uv run ruff check .` and `uv run ruff format --check .`.
 
