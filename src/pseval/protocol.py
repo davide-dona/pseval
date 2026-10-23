@@ -6,7 +6,7 @@ from pseval.data import Log, PrefixBatch, SuffixDraws
 
 # Draws per test prefix.
 NUM_SAMPLES = 100
-# Seeds every protocol draw: the generation seeds, the reference, and the validation subset.
+# Seeds every protocol draw: the generation seeds, the reference, and the validation draws.
 SEED = 42
 
 

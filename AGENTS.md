@@ -37,7 +37,7 @@ logging, selection, figures, tables, and significance tests.
 | `src/pseval/scoring/store.py` | The scores file: `ScoresWriter`, `Scores`, `read_scores`. |
 | `src/pseval/scoring/summary.py` | `Summary`: equal-weight means overall and by length. |
 | `src/pseval/scoring/skill.py` | `skill` against the unconditional reference. |
-| `src/pseval/validation.py` | `validate`: every metric on a fixed validation subset. |
+| `src/pseval/validation.py` | `validate`: every metric on the validation split. |
 | `src/pseval/reference.py` | `Unconditional`, the reference model. |
 | `src/pseval/evaluation.py` | `evaluate`: fit, generate, score. |
 | `baselines/` | Trained baselines using pseval like any external user. Not part of the wheel; see [`baselines/AGENTS.md`](baselines/AGENTS.md). |
