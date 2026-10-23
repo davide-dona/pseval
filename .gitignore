@@ -1,0 +1,20 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+*DS_Store
+
+# Virtual environments
+.venv
+
+# Benchmark bundles built or downloaded locally
+bundles/
+
+# Original event logs, read by the bundle build
+logs/
+
+# Baseline run outputs and W&B's local run cache
+outputs/
+wandb/
+
+# Temporary scripts
+tmp/
