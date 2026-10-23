@@ -12,22 +12,20 @@ class Unconditional(SuffixModel):
     forecast is the marginal suffix distribution over train prefixes.
     """
 
-    def __init__(self) -> None:
-        self._activities = np.zeros(0, dtype=object)
-        self._minutes = np.zeros(0)
-        # [N] The first and the past-the-end event row of each train cut's suffix.
-        self._starts = np.zeros(0, np.int64)
-        self._stops = np.zeros(0, np.int64)
+    def __init__(self, train: Log) -> None:
+        """Collect the suffix of every train cut.
 
-    def fit(self, train: Log, validation: Log) -> None:
-        """Collect the suffix of every train cut; validation is not read."""
+        Raises:
+            ValueError: If the train split has no cut.
+        """
         self._activities = train.events[ACTIVITY_KEY].astype(str).to_numpy(dtype=object)
         self._minutes = train.inter_event_minutes()
         offsets = train.case_offsets
         case_of_event = np.repeat(np.arange(len(offsets) - 1), np.diff(offsets))
         first = np.zeros(len(train), dtype=bool)
         first[offsets[:-1]] = True
-        # A cut's suffix starts at any event but its case's first and runs to the case's end.
+        # [N] The first and the past-the-end event row of each train cut's suffix. A cut's suffix
+        # starts at any event but its case's first and runs to the case's end.
         self._starts = np.flatnonzero(~first)
         self._stops = offsets[1:][case_of_event[~first]]
         if not len(self._starts):
@@ -35,8 +33,6 @@ class Unconditional(SuffixModel):
 
     def sample(self, prefixes: PrefixBatch, num_samples: int, *, seed: int) -> list[SuffixDraws]:
         """Draw `num_samples` train suffixes per prefix, independently and with replacement."""
-        if not len(self._starts):
-            raise RuntimeError('The unconditional model must be fitted before it samples')
         drawn = np.random.default_rng(seed).integers(
             len(self._starts), size=(len(prefixes), num_samples)
         )

@@ -25,11 +25,10 @@ def generate(
     The test cuts are built here, and the model receives only their observed events through
     `sample`; the observed suffixes are joined after sampling. Prefixes are batched by ascending
     prefix length, each batch with its own protocol seed, so the batch size changes nothing but
-    which seed a prefix's draws come from. Only `sample` is called, so a model restored from a
-    checkpoint generates without `fit`.
+    which seed a prefix's draws come from.
 
     Args:
-        model: The fitted model.
+        model: The trained model.
         benchmark: The benchmark to generate on.
         path: Destination file, replaced if it exists.
         selection: How the model was selected on validation.

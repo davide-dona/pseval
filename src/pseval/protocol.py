@@ -2,7 +2,7 @@ from typing import Protocol, runtime_checkable
 
 import numpy as np
 
-from pseval.data import Log, PrefixBatch, SuffixDraws
+from pseval.data import PrefixBatch, SuffixDraws
 
 # Draws per test prefix.
 NUM_SAMPLES = 100
@@ -12,16 +12,14 @@ SEED = 42
 
 @runtime_checkable
 class SuffixModel(Protocol):
-    """What pseval asks of a model.
+    """What pseval asks of a trained model.
 
-    `fit` receives the train and validation splits only; how a model trains and selects itself
-    is its author's choice. `sample` receives observed prefixes only and returns, for each prefix
-    in order, `num_samples` draws spelled on the benchmark vocabulary, in inter-event minutes, no
+    How a model trains and selects itself, on `Benchmark.train` and `Benchmark.validation`, is its
+    author's choice. `sample` receives observed prefixes only and returns, for each prefix in
+    order, `num_samples` draws spelled on the benchmark vocabulary, in inter-event minutes, no
     longer than the benchmark's `max_suffix_length`. It must depend on nothing but the prefixes
     and `seed`.
     """
-
-    def fit(self, train: Log, validation: Log) -> None: ...
 
     def sample(
         self, prefixes: PrefixBatch, num_samples: int, *, seed: int

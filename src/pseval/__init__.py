@@ -1,6 +1,5 @@
 from pseval.benchmark.bundle import Benchmark, load_benchmark
 from pseval.data import Log, PrefixBatch, PrefixKey, SuffixDraws
-from pseval.evaluation import evaluate
 from pseval.generation.generate import generate
 from pseval.protocol import NUM_SAMPLES, SuffixModel
 from pseval.provenance import PROTOCOL_VERSION, Selection
@@ -22,7 +21,6 @@ __all__ = [
     'SuffixDraws',
     'SuffixModel',
     'Summary',
-    'evaluate',
     'generate',
     'load_benchmark',
     'read_scores',

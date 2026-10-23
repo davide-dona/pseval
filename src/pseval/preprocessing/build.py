@@ -71,10 +71,8 @@ def add_reference(
     """
     paths = {name: benchmark.directory / file for name, file in REFERENCE_FILES.items()}
     paths['generations'].parent.mkdir(exist_ok=True)
-    model = Unconditional()
-    model.fit(benchmark.train, benchmark.validation)
     generate(
-        model,
+        Unconditional(benchmark.train),
         benchmark,
         paths['generations'],
         selection=Selection.none(),

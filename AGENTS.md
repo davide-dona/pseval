@@ -38,7 +38,6 @@ logging, selection, figures, tables, and significance tests.
 | `src/pseval/scoring/summary.py` | `Summary`: equal-weight means overall and by length. |
 | `src/pseval/scoring/skill.py` | `skill` against the unconditional reference. |
 | `src/pseval/scoring/validation.py` | `validate`: every metric on the validation split. |
-| `src/pseval/evaluation.py` | `evaluate`: fit, generate, score. |
 | `baselines/` | Trained baselines using pseval like any external user. Not part of the wheel; see [`baselines/AGENTS.md`](baselines/AGENTS.md). |
 
 Each module holds one task; split a module before it takes on a second. The public API is
@@ -49,8 +48,8 @@ exported from `pseval/__init__.py`. Subpackage initializers hold imports and exp
 - Every number pseval reports is sample based: 100 draws per test prefix, equal prefix weight,
   means summed in the scores file's row order, buckets by exact prefix and true suffix length.
   These constants are not configurable.
-- A model only ever sees train and validation through `fit` and observed prefixes through
-  `sample`. Test cuts are built inside `generate`; observed suffixes are joined after sampling.
+- pseval hands a model observed prefixes only, through `sample`; how it trains on train and
+  validation is its author's. Test cuts are built inside `generate`; observed suffixes are joined after sampling.
   Never hand a model anything past a prefix's last event.
 - Draws use the benchmark vocabulary, `UNK` allowed, finite nonnegative inter-event minutes, at
   most `max_suffix_length` events. Observed activities unseen in train are scored as `UNK`.
