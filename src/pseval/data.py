@@ -80,11 +80,6 @@ class Log:
         """A copy of the events, one row per event."""
         return self._events.copy()
 
-    @property
-    def case_ids(self) -> tuple[str, ...]:
-        """Every case, in log order."""
-        return tuple(self._case_ids)
-
     def inter_event_minutes(self) -> np.ndarray:
         """`[len(self)]` float64 minutes since the previous event of the same case, zero first.
 
