@@ -10,9 +10,9 @@ import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 from pseval.data import PrefixKey
+from pseval.generation.records import DecodedEvents, Draws, Generation
+from pseval.metrics.vocabulary import ActivityCodes
 from pseval.provenance import Provenance
-from pseval.records import DecodedEvents, Draws, Generation
-from pseval.vocabulary import ActivityCodes
 
 _VOCABULARY = b'vocabulary'
 

@@ -12,11 +12,11 @@ import torch
 from declarray import Checker, Constraint, DeclareModel, mine
 
 from pseval.data import ACTIVITY_KEY, CASE_KEY, Log
+from pseval.generation.records import Generation
 from pseval.metrics.columns import METRIC_KEYS, PrefixScores
 from pseval.metrics.prepared import PreparedPrefix
 from pseval.metrics.signature.kernel import SignatureKernel
-from pseval.records import Generation
-from pseval.vocabulary import UNK, ActivityCodes
+from pseval.metrics.vocabulary import UNK, ActivityCodes
 
 
 @dataclass(frozen=True, eq=False)

@@ -12,10 +12,7 @@ logging, selection, figures, tables, and significance tests.
 | --- | --- |
 | `src/pseval/data.py` | `Log`, `PrefixBatch`, `SuffixDraws`: the records crossing the model boundary, in log units. |
 | `src/pseval/protocol.py` | The `SuffixModel` protocol, the draw count, and the protocol seed. |
-| `src/pseval/vocabulary.py` | `UNK` and `ActivityCodes`, spelling each activity as one character. |
-| `src/pseval/records.py` | The coded records generated and scored: `Generation`, `Draws`, `DecodedEvents`. |
-| `src/pseval/hashing.py` | File digests and the canonical JSON that fingerprints hash. |
-| `src/pseval/provenance.py` | Protocol version, `Selection`, and the `Provenance` stored in every file. |
+| `src/pseval/provenance.py` | Protocol version, `Selection`, the `Provenance` stored in every file, file digests, and the canonical JSON that fingerprints hash. |
 | `src/pseval/benchmark/specs.py` | The `DatasetSpec` of each benchmark. |
 | `src/pseval/benchmark/manifest.py` | The bundle layout, its `Manifest`, and the fingerprint. |
 | `src/pseval/benchmark/splits.py` | The split file format: `write_split` and `read_split`. |
@@ -24,9 +21,12 @@ logging, selection, figures, tables, and significance tests.
 | `src/pseval/preprocessing/split.py` | Log ordering and the out-of-time split with its first cuts. |
 | `src/pseval/preprocessing/pipeline.py` | An original log read, filtered, and split. |
 | `src/pseval/preprocessing/build.py` | The bundle build, rebuild, and reference. |
+| `src/pseval/preprocessing/reference.py` | `Unconditional`, the reference model whose scores every bundle stores. |
+| `src/pseval/generation/records.py` | The coded records generated and scored: `Generation`, `Draws`, `DecodedEvents`. |
 | `src/pseval/generation/generate.py` | `generate` over the test split. |
 | `src/pseval/generation/join.py` | `join_draws`: a model's draws joined with their prefixes and observed suffixes. |
 | `src/pseval/generation/store.py` | The generations file. |
+| `src/pseval/metrics/vocabulary.py` | `UNK` and `ActivityCodes`, spelling each activity as one character. |
 | `src/pseval/metrics/columns.py` | `PrefixScores`, every scores column in order, `METRIC_KEYS`, and `PROPER_SCORES`. |
 | `src/pseval/metrics/definitions/` | One function per metric group, computing its columns of one prefix. |
 | `src/pseval/metrics/functions/` | Pure functions the metrics are computed with: sequence distances and scoring rules. |
@@ -37,8 +37,7 @@ logging, selection, figures, tables, and significance tests.
 | `src/pseval/scoring/store.py` | The scores file: `ScoresWriter`, `Scores`, `read_scores`. |
 | `src/pseval/scoring/summary.py` | `Summary`: equal-weight means overall and by length. |
 | `src/pseval/scoring/skill.py` | `skill` against the unconditional reference. |
-| `src/pseval/validation.py` | `validate`: every metric on the validation split. |
-| `src/pseval/reference.py` | `Unconditional`, the reference model. |
+| `src/pseval/scoring/validation.py` | `validate`: every metric on the validation split. |
 | `src/pseval/evaluation.py` | `evaluate`: fit, generate, score. |
 | `baselines/` | Trained baselines using pseval like any external user. Not part of the wheel; see [`baselines/AGENTS.md`](baselines/AGENTS.md). |
 

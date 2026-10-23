@@ -3,8 +3,8 @@ from collections.abc import Sequence
 import numpy as np
 
 from pseval.data import Log, PrefixKey, SuffixDraws
+from pseval.generation.records import DecodedEvents, Draws, Generation
 from pseval.metrics.scorer import Scorer
-from pseval.records import DecodedEvents, Draws, Generation
 
 
 def join_draws(

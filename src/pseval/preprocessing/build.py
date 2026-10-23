@@ -10,11 +10,10 @@ from pseval.benchmark.specs import DatasetSpec
 from pseval.benchmark.splits import write_split
 from pseval.data import Log
 from pseval.generation.generate import generate
-from pseval.hashing import sha256
 from pseval.metrics.scorer import Scorer
 from pseval.preprocessing.pipeline import split_log
-from pseval.provenance import Selection
-from pseval.reference import Unconditional
+from pseval.preprocessing.reference import Unconditional
+from pseval.provenance import Selection, sha256
 from pseval.scoring.score import score
 
 

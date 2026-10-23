@@ -1,12 +1,14 @@
+import hashlib
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Self
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from pseval.hashing import canonical_json, validate_sha256
 from pseval.metrics import METRIC_KEYS
 
 # The major version of pseval. Every file pseval writes carries it, and a file written under
@@ -14,6 +16,29 @@ from pseval.metrics import METRIC_KEYS
 PROTOCOL_VERSION = 1
 
 _PARQUET_KEY = b'pseval'
+_SHA256 = re.compile(r'[0-9a-f]{64}')
+
+
+def sha256(path: Path) -> str:
+    """Return the SHA-256 digest of a file's bytes."""
+    with path.open('rb') as file:
+        return hashlib.file_digest(file, 'sha256').hexdigest()
+
+
+def canonical_json(value: object) -> bytes:
+    """Encode a JSON value with sorted keys and no whitespace, the form fingerprints hash."""
+    return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()
+
+
+def validate_sha256(value: object, field_name: str) -> str:
+    """Require a lowercase hexadecimal SHA-256 digest.
+
+    Raises:
+        ValueError: If `value` is not one.
+    """
+    if not isinstance(value, str) or _SHA256.fullmatch(value) is None:
+        raise ValueError(f'Invalid {field_name}: {value!r}')
+    return value
 
 
 @dataclass(frozen=True)

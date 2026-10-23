@@ -6,8 +6,8 @@ from typing import Self
 import numpy as np
 from declarray import Checker
 
+from pseval.generation.records import Generation
 from pseval.metrics.signature.kernel import SignatureKernel
-from pseval.records import Generation
 
 # Seeds the uniform that breaks PIT ties, together with the prefix key.
 PIT_SEED = 42

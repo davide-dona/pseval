@@ -5,11 +5,11 @@ from pseval.protocol import SuffixModel
 
 
 class Unconditional(SuffixModel):
-    """Draw real train suffixes regardless of the prefix.
+    """The unconditional reference model, whose scores every bundle stores for `skill`.
 
-    Each draw is the observed suffix, activities and inter-event minutes, of a train cut drawn
-    uniformly from all of them, so the forecast is the marginal suffix distribution over train
-    prefixes. It is the reference of `skill`.
+    It draws real train suffixes regardless of the prefix: each draw is the observed suffix,
+    activities and inter-event minutes, of a train cut drawn uniformly from all of them, so the
+    forecast is the marginal suffix distribution over train prefixes.
     """
 
     def __init__(self) -> None:

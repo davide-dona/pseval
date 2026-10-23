@@ -5,8 +5,7 @@ from pathlib import Path
 from typing import Self
 
 from pseval.benchmark.specs import SPECS, DatasetSpec
-from pseval.hashing import canonical_json, sha256, validate_sha256
-from pseval.provenance import PROTOCOL_VERSION
+from pseval.provenance import PROTOCOL_VERSION, canonical_json, sha256, validate_sha256
 
 MANIFEST = 'manifest.json'
 
