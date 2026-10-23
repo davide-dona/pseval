@@ -89,6 +89,9 @@ class PrefixScores:
 
 METRIC_KEYS = tuple(field.name for field in fields(PrefixScores))
 
+# The fewest draws per prefix every metric is defined on: best-of-10 needs ten.
+MIN_DRAWS = 10
+
 # The proper scoring rules, lower is better. Models are ranked on them.
 PROPER_SCORES = (
     'signature_kernel_score',

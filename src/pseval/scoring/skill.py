@@ -7,7 +7,8 @@ def skill(scores: Scores, benchmark: Benchmark) -> dict[str, float]:
     """Return the skill of every proper score against the unconditional reference.
 
     The skill is `1 - mean / reference mean`: zero for the reference, one for a perfect score,
-    negative when worse than the reference. Ranking by skill equals ranking by the mean.
+    negative when worse than the reference. Ranking by skill equals ranking by the mean. Every
+    proper score is a fair estimator, so the skill compares models drawn with any draw count.
 
     Args:
         scores: A model's scores on `benchmark`.

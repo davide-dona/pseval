@@ -11,7 +11,7 @@ logging, selection, figures, tables, and significance tests.
 | Path | Responsibility |
 | --- | --- |
 | `src/pseval/data.py` | `Log`, `PrefixBatch`, `SuffixDraws`: the records crossing the model boundary, in log units. |
-| `src/pseval/protocol.py` | The `SuffixModel` protocol, the draw count, and the protocol seed. |
+| `src/pseval/protocol.py` | The `SuffixModel` protocol and the batch seeds. |
 | `src/pseval/provenance.py` | Protocol version, `Selection`, the `Provenance` stored in every file, file digests, and the canonical JSON that fingerprints hash. |
 | `src/pseval/benchmark/specs.py` | The `DatasetSpec` of each benchmark. |
 | `src/pseval/benchmark/manifest.py` | The bundle layout, its `Manifest`, and the fingerprint. |
@@ -45,20 +45,21 @@ exported from `pseval/__init__.py`. Subpackage initializers hold imports and exp
 
 ## Protocol Contracts
 
-- Every number pseval reports is sample based: 100 draws per test prefix, equal prefix weight,
-  means summed in the scores file's row order, buckets by exact prefix and true suffix length.
-  These constants are not configurable.
+- Every number pseval reports is sample based: the draws per test prefix and the seed are chosen
+  at `generate`, 100 and 42 by default, at least ten draws, and recorded in the provenance. Means
+  take equal prefix weight, summed in the scores file's row order, with buckets by exact prefix
+  and true suffix length.
 - pseval hands a model observed prefixes only, through `sample`; how it trains on train and
-  validation is its author's. Test cuts are built inside `generate`; observed suffixes are joined after sampling.
-  Never hand a model anything past a prefix's last event.
+  validation is its author's. Test cuts are built inside `generate`; observed suffixes are joined
+  after sampling. Never hand a model anything past a prefix's last event.
 - Draws use the benchmark vocabulary, `UNK` allowed, finite nonnegative inter-event minutes, at
   most `max_suffix_length` events. Observed activities unseen in train are scored as `UNK`.
 - Test cuts respect each case's first cut, narrowed on cases crossing the split separation.
 - Vocabulary, Declare model, and signature kernel are fitted on the train split only.
 - Every generations and scores file carries the protocol version, the benchmark fingerprint,
-  the model label and metadata, and the `Selection`. Files of another version or fingerprint are
-  refused. `score` also requires every test prefix exactly once, with the benchmark's own prefix
-  and observed suffix.
+  the draw count and seed, the model label and metadata, and the `Selection`. Files of another
+  version or fingerprint are refused. `score` also requires every test prefix exactly once, with
+  the benchmark's own prefix and observed suffix.
 - Any change to a reported number is a major version: bump `PROTOCOL_VERSION` and the package
   major version together, build new bundles, and rerun every baseline. Do not add compatibility
   for files of an earlier version.

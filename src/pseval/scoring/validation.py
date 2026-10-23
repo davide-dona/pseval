@@ -3,7 +3,8 @@ import torch
 
 from pseval.benchmark.bundle import Benchmark
 from pseval.generation.join import join_draws
-from pseval.protocol import SEED, SuffixModel, batch_seed
+from pseval.metrics import MIN_DRAWS
+from pseval.protocol import SuffixModel, batch_seed
 from pseval.scoring.summary import means
 
 
@@ -12,7 +13,7 @@ def validate(
     benchmark: Benchmark,
     *,
     num_samples: int = 32,
-    seed: int = SEED,
+    seed: int = 42,
     batch_size: int = 256,
     device: torch.device | str = 'cpu',
 ) -> dict[str, float]:
@@ -21,7 +22,7 @@ def validate(
     Args:
         model: The model to score, its `sample` called on validation prefixes only.
         benchmark: The benchmark whose validation split to read.
-        num_samples: Draws per prefix.
+        num_samples: Draws per prefix, at least the ten best-of-10 needs.
         seed: Seed of the draws.
         batch_size: Prefixes per `sample` call.
         device: Where the signature kernel is solved.
@@ -31,10 +32,11 @@ def validate(
         `METRIC_KEYS` order. Which one selects the model is its author's choice.
 
     Raises:
-        ValueError: If the draws break the protocol contract, or `num_samples` is below the draws
-            a metric needs, such as the ten of best-of-10.
+        ValueError: If `num_samples` is below ten or the draws break the protocol contract.
     """
     # Prepare the validation data
+    if num_samples < MIN_DRAWS:
+        raise ValueError(f'Validation needs at least {MIN_DRAWS} draws per prefix')
     log = benchmark.validation
     cuts = log.cuts()
     if not cuts:

@@ -9,7 +9,7 @@ from typing import Self
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from pseval.metrics import METRIC_KEYS
+from pseval.metrics import METRIC_KEYS, MIN_DRAWS
 
 # The major version of pseval. Every file pseval writes carries it, and a file written under
 # another one is refused: a major version changes the reported numbers.
@@ -78,7 +78,8 @@ class Selection:
 class Provenance:
     """What a generations or scores file was produced from.
 
-    `dataset` and `fingerprint` identify the benchmark bundle. `label` names the model and
+    `dataset` and `fingerprint` identify the benchmark bundle. `num_samples` is the draw count of
+    every prefix and `seed` the one the batch seeds are derived from. `label` names the model and
     `metadata` holds whatever the model author records with it, such as a checkpoint hash or a
     configuration, as a JSON object. `generations_sha256` is set on a scores file only, naming the
     generations file it scored.
@@ -88,6 +89,8 @@ class Provenance:
     fingerprint: str
     label: str
     selection: Selection
+    num_samples: int
+    seed: int
     metadata: Mapping[str, object] = field(default_factory=dict)
     generations_sha256: str | None = None
     protocol_version: int = PROTOCOL_VERSION
@@ -96,6 +99,10 @@ class Provenance:
         validate_sha256(self.fingerprint, 'benchmark fingerprint')
         if not isinstance(self.label, str) or not self.label.strip():
             raise ValueError('A model label must be a nonempty string')
+        if not _is_int(self.num_samples) or self.num_samples < MIN_DRAWS:
+            raise ValueError(f'The draw count must be an integer of at least {MIN_DRAWS}')
+        if not _is_int(self.seed):
+            raise ValueError('The seed must be an integer')
         if not isinstance(self.metadata, Mapping):
             raise ValueError('Model metadata must be a JSON object')
         try:
@@ -117,6 +124,8 @@ class Provenance:
             'fingerprint': self.fingerprint,
             'label': self.label,
             'selection': self.selection.as_dict(),
+            'num_samples': self.num_samples,
+            'seed': self.seed,
             'metadata': dict(self.metadata),
             'generations_sha256': self.generations_sha256,
         }
@@ -134,6 +143,8 @@ class Provenance:
             'fingerprint',
             'label',
             'selection',
+            'num_samples',
+            'seed',
             'metadata',
             'generations_sha256',
         }
@@ -145,6 +156,8 @@ class Provenance:
             fingerprint=value['fingerprint'],
             label=value['label'],
             selection=Selection.from_dict(value['selection']),
+            num_samples=value['num_samples'],
+            seed=value['seed'],
             metadata=value['metadata'],
             generations_sha256=value['generations_sha256'],
         )
@@ -156,6 +169,8 @@ class Provenance:
             fingerprint=self.fingerprint,
             label=self.label,
             selection=self.selection,
+            num_samples=self.num_samples,
+            seed=self.seed,
             metadata=self.metadata,
             generations_sha256=generations_sha256,
         )
@@ -189,3 +204,7 @@ class Provenance:
                 f'Produced on benchmark {self.dataset} ({self.fingerprint[:12]}), not on '
                 f'{dataset} ({fingerprint[:12]})'
             )
+
+
+def _is_int(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)

@@ -4,11 +4,6 @@ import numpy as np
 
 from pseval.data import PrefixBatch, SuffixDraws
 
-# Draws per test prefix.
-NUM_SAMPLES = 100
-# Seeds every protocol draw: the generation seeds, the reference, and the validation draws.
-SEED = 42
-
 
 @runtime_checkable
 class SuffixModel(Protocol):

@@ -16,7 +16,6 @@ from pseval.generation.records import Generation
 from pseval.generation.store import Generations
 from pseval.metrics.scorer import Scorer
 from pseval.metrics.vocabulary import ActivityCodes
-from pseval.protocol import NUM_SAMPLES
 from pseval.provenance import sha256
 from pseval.scoring.store import ScoresWriter
 
@@ -78,7 +77,7 @@ def _score_block(block: int) -> pd.DataFrame:
     scorer = _worker.scorer
     for generation in generations:
         _require_observed(generation, _worker.test, scorer.codes)
-        scorer.require_draws(generation, num_samples=NUM_SAMPLES)
+        scorer.require_draws(generation, num_samples=_worker.generations.provenance.num_samples)
     keys = pd.DataFrame(
         {
             'case_id': [generation.case_id for generation in generations],
@@ -115,7 +114,7 @@ def score(
 ) -> Path:
     """Score a generations file and write the scores file.
 
-    The file must answer every test prefix exactly once with the protocol's draw count, hold the
+    The file must answer every test prefix exactly once with its stored draw count, hold the
     benchmark's own prefixes and observed suffixes, and come from this benchmark and protocol
     version. Each row group is scored in a worker process; the scores file holds one row per
     prefix in file order, with every metric.
