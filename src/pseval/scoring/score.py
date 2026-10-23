@@ -2,7 +2,7 @@ import multiprocessing
 import os
 from collections.abc import Iterator
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pandas as pd
@@ -10,11 +10,11 @@ import torch
 from tqdm import tqdm
 
 from pseval.benchmark.bundle import Benchmark
+from pseval.benchmark.manifest import sha256
 from pseval.data import Log
 from pseval.generation.join import observe
 from pseval.generation.store import Generations
 from pseval.metrics.scorer import Scorer
-from pseval.provenance import sha256
 from pseval.scoring.store import ScoresWriter
 
 
@@ -90,7 +90,7 @@ def score(
     """Score a generations file and write the scores file.
 
     The file must answer every test prefix exactly once with its stored draw count and come from
-    this benchmark and protocol version. Prefixes and observed suffixes are read from the
+    this benchmark. Prefixes and observed suffixes are read from the
     benchmark. Each row group is scored in a worker process; the scores file holds one row per
     prefix in file order, with every metric.
 
@@ -123,7 +123,7 @@ def score(
         raise ValueError('The generations must answer every test prefix exactly once')
     processes = workers if workers is not None else os.cpu_count() or 1
     with (
-        ScoresWriter(path, provenance.scored(sha256(generations))) as writer,
+        ScoresWriter(path, replace(provenance, generations_sha256=sha256(generations))) as writer,
         tqdm(total=prefixes, desc='Scoring', unit='prefix') as progress,
     ):
         for block in _scored_blocks(

@@ -1,8 +1,6 @@
-import hashlib
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import asdict, dataclass, field
 from typing import Self
 
 import pyarrow as pa
@@ -10,22 +8,7 @@ import pyarrow.parquet as pq
 
 from pseval.metrics import METRIC_KEYS
 
-# The major version of pseval. Every file pseval writes carries it, and a file written under
-# another one is refused: a major version changes the reported numbers.
-PROTOCOL_VERSION = 1
-
 _PARQUET_KEY = b'pseval'
-
-
-def sha256(path: Path) -> str:
-    """Return the SHA-256 digest of a file's bytes."""
-    with path.open('rb') as file:
-        return hashlib.file_digest(file, 'sha256').hexdigest()
-
-
-def canonical_json(value: object) -> bytes:
-    """Encode a JSON value with sorted keys and no whitespace, the form fingerprints hash."""
-    return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()
 
 
 @dataclass(frozen=True)
@@ -49,13 +32,6 @@ class Selection:
         """The selection of a model estimated once, with nothing compared on validation."""
         return cls(metric=None, procedure='none')
 
-    def as_dict(self) -> dict[str, str | None]:
-        return {'metric': self.metric, 'procedure': self.procedure}
-
-    @classmethod
-    def from_dict(cls, value: dict[str, str | None]) -> Self:
-        return cls(**value)
-
 
 @dataclass(frozen=True)
 class Provenance:
@@ -76,54 +52,11 @@ class Provenance:
     seed: int
     metadata: Mapping[str, object] = field(default_factory=dict)
     generations_sha256: str | None = None
-    protocol_version: int = PROTOCOL_VERSION
-
-    def __post_init__(self) -> None:
-        if self.protocol_version != PROTOCOL_VERSION:
-            raise ValueError(
-                f'Written under pseval protocol {self.protocol_version}, but this is protocol '
-                f'{PROTOCOL_VERSION}. Generate and score it again with this version.'
-            )
-
-    def as_dict(self) -> dict[str, object]:
-        return {
-            'protocol_version': self.protocol_version,
-            'dataset': self.dataset,
-            'fingerprint': self.fingerprint,
-            'label': self.label,
-            'selection': self.selection.as_dict(),
-            'num_samples': self.num_samples,
-            'seed': self.seed,
-            'metadata': dict(self.metadata),
-            'generations_sha256': self.generations_sha256,
-        }
-
-    @classmethod
-    def from_dict(cls, value: dict[str, object]) -> Self:
-        """Read a stored record.
-
-        Raises:
-            ValueError: If it is written under another protocol version.
-        """
-        return cls(**value | {'selection': Selection.from_dict(value['selection'])})
-
-    def scored(self, generations_sha256: str) -> Self:
-        """This record as stored on the scores of the generations file with that hash."""
-        return type(self)(
-            dataset=self.dataset,
-            fingerprint=self.fingerprint,
-            label=self.label,
-            selection=self.selection,
-            num_samples=self.num_samples,
-            seed=self.seed,
-            metadata=self.metadata,
-            generations_sha256=generations_sha256,
-        )
 
     def attach_to_schema(self, schema: pa.Schema) -> pa.Schema:
         """Attach this record to a Parquet schema."""
         return schema.with_metadata(
-            (schema.metadata or {}) | {_PARQUET_KEY: json.dumps(self.as_dict()).encode()}
+            (schema.metadata or {}) | {_PARQUET_KEY: json.dumps(asdict(self)).encode()}
         )
 
     @classmethod
@@ -131,12 +64,13 @@ class Provenance:
         """Read this record from a Parquet file written by pseval.
 
         Raises:
-            ValueError: If the file has none, or it is written under another protocol version.
+            ValueError: If the file has none.
         """
         raw = (parquet.schema_arrow.metadata or {}).get(_PARQUET_KEY)
         if raw is None:
             raise ValueError('Missing pseval provenance: this file was not written by pseval.')
-        return cls.from_dict(json.loads(raw))
+        value = json.loads(raw)
+        return cls(**value | {'selection': Selection(**value['selection'])})
 
     def require_benchmark(self, dataset: str, fingerprint: str) -> None:
         """Require this record to name the given benchmark bundle.

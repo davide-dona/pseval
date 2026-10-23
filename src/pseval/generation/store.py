@@ -10,9 +10,9 @@ import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 from pseval.data import PrefixKey
+from pseval.generation.provenance import Provenance
 from pseval.generation.records import Draws, Generation
 from pseval.metrics.vocabulary import ActivityCodes
-from pseval.provenance import Provenance
 
 _VOCABULARY = b'vocabulary'
 
@@ -173,8 +173,7 @@ class Generations:
     def __init__(self, path: Path) -> None:
         """
         Raises:
-            ValueError: If the schema differs, or the provenance is missing or written under
-                another protocol version.
+            ValueError: If the schema differs or the provenance is missing.
         """
         self._parquet = pq.ParquetFile(path)
         try:

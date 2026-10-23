@@ -8,16 +8,9 @@ from pseval.benchmark.specs import SPECS, DatasetSpec
 from pseval.benchmark.splits import read_split
 from pseval.data import Log
 from pseval.metrics.scorer import Scorer
-from pseval.provenance import PROTOCOL_VERSION
 
-# The Hugging Face dataset repository holding the published bundles, one directory per protocol
-# version and dataset.
+# The Hugging Face dataset repository holding the published bundles, one directory per dataset.
 HUB_REPOSITORY = '446f6e6e79/pseval'
-
-
-def hub_directory(dataset: str) -> str:
-    """Where a dataset's bundle lies in the Hub repository and under a local bundle root."""
-    return f'v{PROTOCOL_VERSION}/{dataset}'
 
 
 class Benchmark:
@@ -108,8 +101,8 @@ def load_benchmark(dataset: str, *, root: Path | None = None) -> Benchmark:
 
     Args:
         dataset: One of `sepsis`, `bpic12`, `bpic17`, `bpic19`.
-        root: A local bundle root, holding `v<protocol>/<dataset>/`, instead of downloading the
-            bundle from the Hugging Face Hub into its cache.
+        root: A local bundle root, holding `<dataset>/`, instead of downloading the bundle from
+            the Hugging Face Hub into its cache.
 
     Returns:
         The verified benchmark.
@@ -126,7 +119,7 @@ def load_benchmark(dataset: str, *, root: Path | None = None) -> Benchmark:
             snapshot_download(
                 repo_id=HUB_REPOSITORY,
                 repo_type='dataset',
-                allow_patterns=f'{hub_directory(dataset)}/**',
+                allow_patterns=f'{dataset}/**',
             )
         )
-    return Benchmark(root / hub_directory(dataset))
+    return Benchmark(root / dataset)

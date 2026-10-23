@@ -4,16 +4,22 @@ from pathlib import Path
 
 import torch
 
-from pseval.benchmark.bundle import Benchmark, hub_directory
-from pseval.benchmark.manifest import MANIFEST, PROTOCOL_FILES, REFERENCE_FILES, Manifest
+from pseval.benchmark.bundle import Benchmark
+from pseval.benchmark.manifest import (
+    MANIFEST,
+    PROTOCOL_FILES,
+    REFERENCE_FILES,
+    Manifest,
+    sha256,
+)
 from pseval.benchmark.specs import DatasetSpec
 from pseval.benchmark.splits import write_split
 from pseval.data import Log
 from pseval.generation.generate import generate
+from pseval.generation.provenance import Selection
 from pseval.metrics.scorer import Scorer
 from pseval.preprocessing.pipeline import split_log
 from pseval.preprocessing.reference import Unconditional
-from pseval.provenance import Selection, sha256
 from pseval.scoring.score import score
 
 
@@ -99,15 +105,15 @@ def build(
     Args:
         spec: The dataset's spec.
         original: The original log.
-        root: The bundle root; the bundle is written to `root/v<protocol>/<dataset>/`, the
-            layout `load_benchmark(dataset, root=root)` reads.
+        root: The bundle root; the bundle is written to `root/<dataset>/`, the layout
+            `load_benchmark(dataset, root=root)` reads.
         device: Where the signature kernel is calibrated and solved.
         workers: Scoring processes for the reference, one per CPU when None.
 
     Returns:
         The verified bundle.
     """
-    directory = root / hub_directory(spec.name)
+    directory = root / spec.name
     build_protocol(spec, original, directory, device=device)
     return add_reference(Benchmark(directory), device=device, workers=workers)
 
@@ -128,5 +134,5 @@ def rebuild(benchmark: Benchmark, original: Path, *, device: torch.device | str)
         differing = sorted(name for name in expected if expected[name] != actual[name])
         raise ValueError(
             f'Rebuilding {benchmark.dataset} gives another fingerprint; differing: '
-            f'{", ".join(differing) or "spec or protocol version"}'
+            f'{", ".join(differing) or "spec"}'
         )

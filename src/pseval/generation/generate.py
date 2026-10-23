@@ -5,10 +5,10 @@ from tqdm import tqdm
 
 from pseval.benchmark.bundle import Benchmark
 from pseval.generation.join import join_draws
+from pseval.generation.provenance import Provenance, Selection
 from pseval.generation.store import GenerationWriter
 from pseval.metrics import MIN_DRAWS
 from pseval.protocol import SuffixModel, batch_seed
-from pseval.provenance import Provenance, Selection
 
 
 def generate(

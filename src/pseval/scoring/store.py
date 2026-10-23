@@ -7,8 +7,8 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from pseval.generation.provenance import Provenance
 from pseval.metrics import METRIC_KEYS
-from pseval.provenance import Provenance
 from pseval.scoring.summary import Summary, summarize
 
 # The scores file: one row per test prefix, every metric a column.
@@ -92,7 +92,7 @@ def read_scores(path: Path) -> Scores:
     """Read a scores file.
 
     Raises:
-        ValueError: If it is not a pseval scores file of this protocol version.
+        ValueError: If it is not a pseval scores file.
     """
     with pq.ParquetFile(path) as parquet:
         if not parquet.schema_arrow.remove_metadata().equals(SCHEMA):

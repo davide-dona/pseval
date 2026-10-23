@@ -1,8 +1,8 @@
 from pseval.benchmark.bundle import Benchmark, load_benchmark
 from pseval.data import Log, PrefixBatch, PrefixKey, SuffixDraws
 from pseval.generation.generate import generate
+from pseval.generation.provenance import Selection
 from pseval.protocol import SuffixModel
-from pseval.provenance import PROTOCOL_VERSION, Selection
 from pseval.scoring.score import score
 from pseval.scoring.skill import skill
 from pseval.scoring.store import Scores, read_scores
@@ -10,7 +10,6 @@ from pseval.scoring.summary import Summary
 from pseval.scoring.validation import validate
 
 __all__ = [
-    'PROTOCOL_VERSION',
     'Benchmark',
     'Log',
     'PrefixBatch',

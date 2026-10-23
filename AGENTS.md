@@ -10,8 +10,6 @@ number means, from splits to metrics. Training and selection belong to the model
   checks under `tmp/` and remove them afterward. Do not add tests unless Davide asks for them.
 - Never expose a model to anything past a prefix's last event, and fit protocol state on the train
   split only.
-- Any change to a reported number is a major version: bump `PROTOCOL_VERSION` and the package
-  major version together. Do not add compatibility for files of an earlier version.
 - Use Python 3.13 typing, four-space indentation, single quotes, 100-character lines, and no
   comment on the first line of a file. Run `uv run ruff check .` and `uv run ruff format --check .`.
 
@@ -20,10 +18,9 @@ number means, from splits to metrics. Training and selection belong to the model
 | Task | Area |
 | --- | --- |
 | Model boundary: `Log`, `PrefixBatch`, `SuffixDraws`, `SuffixModel` | `src/pseval/data.py`, `src/pseval/protocol.py` |
-| File identity, provenance, and fingerprint hashing | `src/pseval/provenance.py` |
-| Dataset specs, bundle layout, manifests, and loading | `src/pseval/benchmark/` |
+| Dataset specs, bundle layout, manifests, fingerprints, and loading | `src/pseval/benchmark/` |
 | Log filtering, the out-of-time split, bundle builds, and the reference | `src/pseval/preprocessing/` |
-| Test-split sampling and the generations file | `src/pseval/generation/` |
+| Test-split sampling, the generations file, and its provenance | `src/pseval/generation/` |
 | Metric definitions, vocabulary, Declare checks, and the signature kernel | `src/pseval/metrics/` |
 | The scores file, summaries, skill, and validation | `src/pseval/scoring/` |
 | Trained baselines using the public API | [`baselines/AGENTS.md`](baselines/AGENTS.md) |

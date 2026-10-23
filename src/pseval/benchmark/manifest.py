@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Self
 
 from pseval.benchmark.specs import SPECS, DatasetSpec
-from pseval.provenance import PROTOCOL_VERSION, canonical_json, sha256
 
 MANIFEST = 'manifest.json'
 
@@ -31,8 +30,8 @@ REFERENCE_FILES = {
 class Manifest:
     """Identity and contents of one benchmark bundle.
 
-    The fingerprint hashes the protocol version, the dataset spec, the original log's hash, and
-    the hash of every protocol file. The reference files are listed beside it, since they are
+    The fingerprint hashes the dataset spec, the original log's hash, and the hash of every
+    protocol file. The reference files are listed beside it, since they are
     produced from a bundle that already has its fingerprint.
     """
 
@@ -42,14 +41,8 @@ class Manifest:
     files: dict[str, str]
     fingerprint: str
     reference: dict[str, str] | None = None
-    protocol_version: int = PROTOCOL_VERSION
 
     def __post_init__(self) -> None:
-        if self.protocol_version != PROTOCOL_VERSION:
-            raise ValueError(
-                f'The {self.dataset} bundle is for pseval protocol {self.protocol_version}, but '
-                f'this is protocol {PROTOCOL_VERSION}.'
-            )
         if self.fingerprint != _fingerprint(
             self.dataset, self.spec, self.original_sha256, self.files
         ):
@@ -80,14 +73,12 @@ class Manifest:
         """Read a manifest file.
 
         Raises:
-            ValueError: If it is for another protocol version or its fingerprint does not match
-                its contents.
+            ValueError: If its fingerprint does not match its contents.
         """
         return cls(**json.loads(path.read_bytes()))
 
     def write(self, path: Path) -> None:
         payload = {
-            'protocol_version': self.protocol_version,
             'dataset': self.dataset,
             'spec': self.spec,
             'original_sha256': self.original_sha256,
@@ -124,14 +115,21 @@ class Manifest:
             )
 
 
+def sha256(path: Path) -> str:
+    """Return the SHA-256 digest of a file's bytes."""
+    with path.open('rb') as file:
+        return hashlib.file_digest(file, 'sha256').hexdigest()
+
+
 def _fingerprint(
     dataset: str, spec: dict[str, object], original_sha256: str, files: dict[str, str]
 ) -> str:
     contents = {
-        'protocol_version': PROTOCOL_VERSION,
         'dataset': dataset,
         'spec': spec,
         'original_sha256': original_sha256,
         'files': files,
     }
-    return hashlib.sha256(canonical_json(contents)).hexdigest()
+    # Sorted keys and no whitespace, so the same contents always hash the same.
+    canonical = json.dumps(contents, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+    return hashlib.sha256(canonical.encode()).hexdigest()
