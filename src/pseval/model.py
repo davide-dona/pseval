@@ -20,7 +20,7 @@ class SuffixModel(Protocol):
             seed: Seed of the batch's draws.
 
         Returns:
-            For each prefix in order, `num_samples` draws spelled on the benchmark vocabulary, in
+            For each prefix in order, `num_samples` draws named from the benchmark vocabulary, in
             inter-event minutes, each at most the benchmark's `max_suffix_length` events long.
         """
         ...

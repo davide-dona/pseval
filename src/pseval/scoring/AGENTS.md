@@ -16,9 +16,9 @@ to the numbers a paper reports. It also scores validation prefixes in memory for
 
 ## Contracts
 
-- `score` rejects a generations file from another benchmark, spelled on another vocabulary, or not
-  answering every test cut exactly once. Each prefix's draws are checked again with
-  `Scorer.require_draws`, since the file may come from outside `generate`.
+- `score` rejects a generations file from another benchmark or not answering every test cut
+  exactly once. Each prefix's draws are checked again with `Scorer.require_draws`, including
+  their names against the vocabulary, since the file may come from outside `generate`.
 - Workers are spawned, not forked, so each opens its own CUDA context. Each worker opens its own
   generations file, test split, and scorer, gets `1 / processes` of the GPU memory, and scores one
   row group per task. Results are written in file order.

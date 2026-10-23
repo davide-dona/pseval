@@ -1,5 +1,5 @@
-import json
 from collections.abc import Sequence
+from itertools import pairwise
 from pathlib import Path
 from types import TracebackType
 from typing import Self
@@ -10,14 +10,11 @@ import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 from pseval.data import PrefixKey
-from pseval.generation.codes import ActivityCodes
 from pseval.generation.provenance import Provenance
 from pseval.generation.records import Draws, Generation
 
-_VOCABULARY = b'vocabulary'
-
-# One activity sequence, one character per activity. Names live once in the vocabulary metadata.
-_ACTIVITIES = pa.string()
+# Activity names, one per event, dictionary encoded on disk.
+_ACTIVITIES = pa.list_(pa.field(name='element', type=pa.string()))
 # Inter-event minutes, one per activity. Stored in float32, the width models emit.
 _MINUTES = pa.list_(pa.field(name='element', type=pa.float32()))
 
@@ -46,6 +43,7 @@ SCHEMA = pa.schema(
 )
 
 _KEY_COLUMNS = ['case_id', 'prefix_len']
+_NAME_LEAVES = ['generated_draws.list.element.activities.list.element']
 _FLOAT_LEAVES = ['generated_draws.list.element.inter_event_time_minutes.list.element']
 
 
@@ -56,7 +54,7 @@ def _row(generation: Generation) -> dict:
         'prefix_len': generation.prefix_len,
         'generated_draws': [
             {
-                'activities': events.activities,
+                'activities': list(events.activities),
                 'inter_event_time_minutes': events.inter_event_time_minutes.tolist(),
                 'truncated': bool(truncated),
             }
@@ -73,7 +71,11 @@ def _draws_from_table(table: pa.Table) -> list[tuple[PrefixKey, Draws]]:
     """
     draws = table.column('generated_draws').combine_chunks()
     draw_offsets = draws.offsets.to_numpy()
-    activities = pc.struct_field(draws.values, 'activities').to_pylist()
+    names = pc.struct_field(draws.values, 'activities')
+    # Decoded through the dictionary, so each distinct name is one shared string object.
+    encoded = pc.dictionary_encode(names.values)
+    events = np.array(encoded.dictionary.to_pylist(), dtype=object)[encoded.indices.to_numpy()]
+    activities = [tuple(events[a:b]) for a, b in pairwise(names.offsets.to_numpy())]
     truncated = pc.struct_field(draws.values, 'truncated').to_numpy(zero_copy_only=False)
     lists = pc.struct_field(draws.values, 'inter_event_time_minutes')
     times, time_offsets = lists.values.to_numpy().astype(np.float64), lists.offsets.to_numpy()
@@ -106,24 +108,19 @@ class GenerationWriter:
     block removes the file, so an interrupted generation leaves nothing readable.
     """
 
-    def __init__(self, path: Path, provenance: Provenance, *, vocabulary: Sequence[str]) -> None:
+    def __init__(self, path: Path, provenance: Provenance) -> None:
         """
         Args:
             path: Destination file, replaced if it exists.
             provenance: The benchmark, model, and selection that produced the generations.
-            vocabulary: The activity names the suffixes are spelled on, in code order.
         """
-        schema = provenance.attach_to_schema(SCHEMA)
-        schema = schema.with_metadata(
-            schema.metadata | {_VOCABULARY: json.dumps(list(vocabulary)).encode()}
-        )
         self._path = path
         self._writer = pq.ParquetWriter(
             where=path,
-            schema=schema,
+            schema=provenance.attach_to_schema(SCHEMA),
             compression='zstd',
             compression_level=9,
-            use_dictionary=False,
+            use_dictionary=_NAME_LEAVES,
             use_byte_stream_split=_FLOAT_LEAVES,
         )
 
@@ -167,9 +164,6 @@ class Generations:
             if not self._parquet.schema_arrow.remove_metadata().equals(SCHEMA):
                 raise ValueError(f'{path} does not have the generations schema of pseval')
             self._provenance = Provenance.from_parquet(self._parquet)
-            self._codes = ActivityCodes(
-                json.loads(self._parquet.schema_arrow.metadata[_VOCABULARY])
-            )
         except Exception:
             self._parquet.close()
             raise
@@ -188,11 +182,6 @@ class Generations:
     @property
     def provenance(self) -> Provenance:
         return self._provenance
-
-    @property
-    def codes(self) -> ActivityCodes:
-        """The codes the file spells activities with, from its vocabulary."""
-        return self._codes
 
     @property
     def blocks(self) -> int:

@@ -21,7 +21,7 @@ Read the most specific guide before changing files in its scope.
 | --- | --- |
 | Model boundary: `Log`, `PrefixBatch`, `SuffixDraws`, `SuffixModel` | `src/pseval/data.py`, `src/pseval/model.py` |
 | Dataset specs, log filtering, the split, the benchmark directory, its fingerprint, and builds | [`src/pseval/preprocessing/AGENTS.md`](src/pseval/preprocessing/AGENTS.md) |
-| Test-split sampling, activity codes, the generations file, and its provenance | [`src/pseval/generation/AGENTS.md`](src/pseval/generation/AGENTS.md) |
+| Test-split sampling, the generations file, and its provenance | [`src/pseval/generation/AGENTS.md`](src/pseval/generation/AGENTS.md) |
 | Metric definitions, Declare checks, and the signature kernel | [`src/pseval/metrics/AGENTS.md`](src/pseval/metrics/AGENTS.md) |
 | The scores file, summaries, skill, and validation | [`src/pseval/scoring/AGENTS.md`](src/pseval/scoring/AGENTS.md) |
 | Trained baselines using the public API | [`baselines/AGENTS.md`](baselines/AGENTS.md) |

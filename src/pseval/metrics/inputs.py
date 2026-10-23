@@ -1,5 +1,5 @@
 import zlib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Self
 
@@ -30,7 +30,12 @@ class MetricInputs:
 
     @classmethod
     def of_batch(
-        cls, generations: Sequence[Generation], *, checker: Checker, kernel: SignatureKernel
+        cls,
+        generations: Sequence[Generation],
+        *,
+        checker: Checker,
+        kernel: SignatureKernel,
+        axes: Mapping[str, int],
     ) -> list[Self]:
         """Compute the inputs for a batch of prefixes.
 
@@ -38,6 +43,7 @@ class MetricInputs:
             generations: Decoded prefixes, drawn suffixes, and observed suffixes.
             checker: Declare checker applied to each prefix completed by each of its suffixes.
             kernel: Signature kernel comparing the draws and observed suffix of each prefix.
+            axes: Each activity name to its signature kernel axis.
 
         Returns:
             Metric inputs in input order. Empty input gives an empty list.
@@ -47,7 +53,7 @@ class MetricInputs:
         conformances = _full_conformances(generations, checker=checker)
         grams = kernel.grams(
             [
-                [kernel.embed(events) for events in _draws_then_observed(generation)]
+                [kernel.embed(events, axes=axes) for events in _draws_then_observed(generation)]
                 for generation in generations
             ]
         )

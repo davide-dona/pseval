@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Self
 
@@ -7,7 +7,6 @@ import pysiglib
 import torch
 from scipy.spatial.distance import pdist
 
-from pseval.generation.codes import vocabulary_indices
 from pseval.generation.records import DecodedEvents
 
 # Each cell of the PDE grid is split into 2**DYADIC_ORDER steps along both paths.
@@ -85,14 +84,14 @@ class SignatureKernel:
             'alphabet': self.alphabet,
         }
 
-    def embed(self, events: DecodedEvents) -> np.ndarray:
-        """Embed one suffix as path points, its activities on their vocabulary axes.
+    def embed(self, events: DecodedEvents, *, axes: Mapping[str, int]) -> np.ndarray:
+        """Embed one suffix as path points, each activity on its axis in `axes`.
 
         Returns:
             Points shaped `[2L + 1, 1 + alphabet]`, float64.
         """
         return embed(
-            vocabulary_indices(events.activities),
+            np.fromiter(map(axes.__getitem__, events.activities), np.int64, len(events)),
             events.inter_event_time_minutes,
             time_scale=self.time_scale,
             alphabet=self.alphabet,

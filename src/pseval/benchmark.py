@@ -70,7 +70,7 @@ class Benchmark:
 
         An observed activity unseen in train is scored as `UNK`.
         """
-        return self._scorer.codes.vocabulary
+        return self._scorer.vocabulary
 
     @property
     def max_suffix_length(self) -> int:

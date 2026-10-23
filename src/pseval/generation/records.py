@@ -8,9 +8,10 @@ import numpy as np
 
 @dataclass(frozen=True, eq=False)
 class DecodedEvents:
-    """A run of events in log units, its activities spelled by `ActivityCodes`."""
+    """A run of events in log units."""
 
-    activities: str
+    # [L] The activity name of each event.
+    activities: tuple[str, ...]
     # [L] float64 minutes before each activity, from the previous event.
     inter_event_time_minutes: np.ndarray
 
@@ -31,8 +32,8 @@ class Draws:
     `inter_event_time_minutes[offsets[i]:offsets[i + 1]]` as their times.
     """
 
-    # [K] The activities of each draw.
-    activities: tuple[str, ...]
+    # [K] The activity names of each draw.
+    activities: tuple[tuple[str, ...], ...]
     # [E] float64 inter-event minutes of every draw, draw after draw.
     inter_event_time_minutes: np.ndarray
     # [K] Whether each draw was closed at the length cap without ending.
@@ -83,7 +84,7 @@ class Generation:
     """One prefix's drawn suffixes and the observed suffix they are scored against."""
 
     case_id: str
-    prefix_activities: str
+    prefix_activities: tuple[str, ...]
     draws: Draws
     observed: DecodedEvents
 

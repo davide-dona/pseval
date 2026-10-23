@@ -46,7 +46,7 @@ def _score_block(block: int) -> pd.DataFrame:
     """Validate and score one row group, one scores row per prefix."""
     scorer = _worker.scorer
     generations = [
-        observe(_worker.test, key, draws, codes=scorer.codes)
+        observe(_worker.test, key, draws, vocabulary=scorer.axes.keys())
         for key, draws in _worker.generations.block(block)
     ]
     for generation in generations:
@@ -108,12 +108,9 @@ def score(
     path = generations.with_name('scores.parquet') if path is None else path
     with Generations(generations) as file:
         provenance = file.provenance
-        vocabulary = file.codes.vocabulary
         blocks, prefixes = file.blocks, file.prefixes
         keys = file.prefix_keys()
     provenance.require_benchmark(benchmark.dataset, benchmark.fingerprint)
-    if vocabulary != benchmark.vocabulary:
-        raise ValueError('The generations are spelled on another activity vocabulary')
     if len(set(keys)) != len(keys) or set(keys) != set(benchmark._test().cuts()):
         raise ValueError('The generations must answer every test prefix exactly once')
     processes = workers if workers is not None else os.cpu_count() or 1
