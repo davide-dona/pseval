@@ -28,8 +28,8 @@ def validate(
         device: Where the signature kernel is solved.
 
     Returns:
-        Every metric's equal-weight mean over the split, summed in split order, in
-        `METRIC_KEYS` order. Which one selects the model is its author's choice.
+        Every metric's equal-weight mean over the split, in `METRIC_KEYS` order. Which one
+        selects the model is its author's choice.
 
     Raises:
         ValueError: If `num_samples` is below ten or the draws break the protocol contract.

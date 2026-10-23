@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -9,8 +10,7 @@ class Summary:
     """Equal-weight means of every metric, overall and by length.
 
     `overall` holds one mean per metric. `by_prefix_length` and `by_suffix_length` hold one row
-    per length present, ascending, with a `prefixes` column counting its prefixes. Every mean is
-    summed in the scores file's row order.
+    per length present, ascending, with a `prefixes` column counting its prefixes.
     """
 
     prefixes: int
@@ -20,9 +20,8 @@ class Summary:
 
 
 def means(values: pd.DataFrame) -> pd.Series:
-    """Column means summed in row order."""
-    totals = np.add.accumulate(values.to_numpy(np.float64), axis=0)[-1]
-    return pd.Series(totals / len(values), index=values.columns)
+    """Column means, each sum exactly rounded, so the row order does not change them."""
+    return pd.Series({column: math.fsum(values[column]) / len(values) for column in values})
 
 
 def _bucket_means(frame: pd.DataFrame, column: str, keys: list[str]) -> pd.DataFrame:
@@ -40,7 +39,7 @@ def summarize(frame: pd.DataFrame, keys: list[str]) -> Summary:
     suffix length.
 
     Args:
-        frame: One row per prefix, in the scores file's row order.
+        frame: One row per prefix.
         keys: The metric columns to average.
     """
     return Summary(
