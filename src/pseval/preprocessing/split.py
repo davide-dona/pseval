@@ -53,29 +53,36 @@ def out_of_time_split(
         `(train, validation, test, first_cuts)`: row subsets of `log`, and the first cut of every
         test case, indexed by case.
     """
+    # Get the start and stop timestamps of every case, indexed by case.
     edges = log.groupby(CASE_KEY)[TIMESTAMP_KEY].agg(['min', 'max'])
     starts_ts, stops_ts = edges['min'], edges['max']
 
+    # The first test case is the one whose start is at the `1 - test_fraction` quantile of starts.
     first_test_case = int(len(edges) * (1 - test_fraction))
     separation_ts = np.sort(starts_ts.values)[first_test_case]
 
+    # The train cases are those finishing before the first test case's start
     train_cases = stops_ts.index[stops_ts.values < separation_ts]
     train = log[log[CASE_KEY].isin(train_cases)]
 
+    # The test cases are those still running at the separation, including the crossing ones
+    # that started before it.
     test_cases = stops_ts.index[stops_ts.values >= separation_ts]
+    # Avoid evaluatinf the prefixes of a trace that started before the separation, 
+    # since they would be predicted with training data from their future. 
     crossing = test_cases.difference(starts_ts.sort_values().index[first_test_case:])
     test = log[log[CASE_KEY].isin(test_cases)]
     first_cuts = _first_cuts(test, separation_ts=separation_ts, crossing=crossing)
 
-    # The candidates are taken in log order, so the draw depends on the seed alone.
+    # The validation cases are a seeded random sample of the train cases.
     validation_share = validation_fraction / (1 - test_fraction)
     train_cases = train[CASE_KEY].unique()
     rng = np.random.default_rng(seed)
     validation_cases = rng.choice(
         train_cases, size=int(len(train_cases) * validation_share), replace=False
     )
-
     validation = train[train[CASE_KEY].isin(validation_cases)]
+    # The remaining train cases are those not drawn for validation
     train = train[~train[CASE_KEY].isin(validation_cases)]
     return train, validation, test, first_cuts
 
@@ -86,13 +93,9 @@ def _first_cuts(
     """Each case's first cut, indexed by case: on the crossing cases the first one whose prefix
     reaches past the separation, and 1 on every other case."""
     rows = split[split[CASE_KEY].isin(crossing)]
-    # A cut of k takes the first k events, so a bound is the 1-based position of the event the
-    # prefix has to reach.
     positions = rows.groupby(CASE_KEY).cumcount() + 1
-
-    # Strictly after the separation: an event landing exactly on it is one a training case could
-    # still have been running through. Compared as numpy values, since a tz-aware column and a
-    # numpy timestamp are not comparable as pandas objects.
+    
+    # The first cut is the first event whose timestamp is after the separation, or 1 if none.
     selected = rows[TIMESTAMP_KEY].values > separation_ts
     bounds = positions[selected].groupby(rows[CASE_KEY][selected]).min()
     cases = pd.Index(split[CASE_KEY].unique())

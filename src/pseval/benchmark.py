@@ -9,7 +9,6 @@ import pandas as pd
 
 from pseval.data import CASE_KEY, Log
 from pseval.metrics.scorer import Scorer
-from pseval.specs import SPECS
 
 # The Hugging Face dataset repository holding the published benchmarks, one directory per dataset
 # and one tag per pseval release.
@@ -29,7 +28,8 @@ FILES = {
 REFERENCE_SCORES = 'reference_scores.parquet'
 
 # The first cut of each case, a column of the test split only. It is 1 except on the test cases
-# running across the split separation, whose earlier prefixes a training run could have seen.
+# running across the split separation, whose prefixes ending before it would be predicted with
+# training data from their future.
 PREFIX_START_KEY = '_prefix_start'
 
 
@@ -114,10 +114,8 @@ def load_benchmark(dataset: str, *, root: Path | None = None) -> Benchmark:
             pseval release from the Hugging Face Hub into its cache.
 
     Raises:
-        ValueError: If the dataset is unknown.
+        ValueError: If the root holds no benchmark of that dataset.
     """
-    if dataset not in SPECS:
-        raise ValueError(f'Unknown dataset {dataset!r}; choose one of {", ".join(SPECS)}')
     if root is None:
         from huggingface_hub import snapshot_download
 
@@ -129,6 +127,8 @@ def load_benchmark(dataset: str, *, root: Path | None = None) -> Benchmark:
                 allow_patterns=f'{dataset}/**',
             )
         )
+    if not (root / dataset).is_dir():
+        raise ValueError(f'No {dataset!r} benchmark under {root}')
     return Benchmark(root / dataset)
 
 

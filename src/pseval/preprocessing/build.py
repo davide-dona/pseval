@@ -7,9 +7,9 @@ from pseval.generation.generate import generate
 from pseval.generation.provenance import Selection
 from pseval.metrics.scorer import Scorer
 from pseval.preprocessing.pipeline import split_log
+from pseval.preprocessing.specs import SPECS, DatasetSpec
 from pseval.scoring.reference import Unconditional
 from pseval.scoring.score import score
-from pseval.specs import SPECS, DatasetSpec
 
 
 def build(

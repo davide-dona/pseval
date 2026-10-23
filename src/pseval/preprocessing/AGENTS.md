@@ -7,13 +7,14 @@ part of the model author's workflow, and the only code that writes benchmark fil
 
 | Module | Owns |
 | --- | --- |
+| `specs.py` | `DatasetSpec` and the shipped `SPECS`: original log columns and every protocol constant. |
 | `filters.py` | Case duration and length measures and the case filters. |
 | `split.py` | Log sorting, inter-event minutes, and the out-of-time split with its first cuts. |
 | `pipeline.py` | Reading an original log by its spec and the full filter, sort, and split order. |
 | `build.py` | `build`, the only way to make a benchmark, and the reproducibility check `rebuild`. |
 
-The dataset specs live in `pseval/specs.py`, and the benchmark directory format, `FILES`, the
-`fingerprint`, and loading in `pseval/benchmark.py`.
+The benchmark directory format, `FILES`, the `fingerprint`, and loading live in
+`pseval/benchmark.py`, which knows nothing of the specs.
 
 ## Benchmark Directory
 
@@ -41,8 +42,9 @@ The dataset specs live in `pseval/specs.py`, and the benchmark directory format,
   split. Reordering these steps changes which cases survive.
 - The split is out of time. Train keeps cases finished before the separation; test keeps cases
   still running at it. A test case crossing the separation keeps its earlier events, and its
-  first cut is the first prefix reaching past the separation, since a training run could have
-  seen the earlier ones.
+  first cut is the first prefix reaching past the separation. An earlier prefix ends before
+  train does, so the model would predict it with training data from its future; every scored
+  prefix ends after all of train.
 - Validation is a seeded random sample of whole train cases, not a time slice: a slice ending at
   the separation would lose every long case starting inside it to test, so its prefixes would
   face far shorter remaining times than test's.
