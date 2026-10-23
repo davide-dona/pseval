@@ -2,8 +2,6 @@ import tempfile
 from dataclasses import replace
 from pathlib import Path
 
-import torch
-
 from pseval.benchmark.bundle import Benchmark
 from pseval.benchmark.manifest import (
     MANIFEST,
@@ -23,9 +21,7 @@ from pseval.preprocessing.reference import Unconditional
 from pseval.scoring.score import score
 
 
-def build_protocol(
-    spec: DatasetSpec, original: Path, directory: Path, *, device: torch.device | str
-) -> Manifest:
+def build_protocol(spec: DatasetSpec, original: Path, directory: Path) -> Manifest:
     """Write the protocol files of a bundle and its manifest, without the reference.
 
     Fits the vocabulary, mines the Declare model, and calibrates the signature kernel on the
@@ -35,7 +31,6 @@ def build_protocol(
         spec: The dataset's spec.
         original: The original log.
         directory: A directory to create for the bundle.
-        device: Where the signature kernel's bandwidth median is computed.
 
     Returns:
         The written manifest.
@@ -55,7 +50,6 @@ def build_protocol(
         declare_min_support=spec.declare_min_support,
         declare_min_confidence=spec.declare_min_confidence,
         declare_max_cardinality=spec.declare_max_cardinality,
-        device=device,
     )
     scorer.save(
         protocol=directory / PROTOCOL_FILES['protocol'],
@@ -67,9 +61,7 @@ def build_protocol(
     return manifest
 
 
-def add_reference(
-    benchmark: Benchmark, *, device: torch.device | str, workers: int | None = None
-) -> Benchmark:
+def add_reference(benchmark: Benchmark, *, workers: int | None = None) -> Benchmark:
     """Generate and score the unconditional reference into a bundle and list it in the manifest.
 
     Returns:
@@ -84,7 +76,7 @@ def add_reference(
         selection=Selection.none(),
         label='unconditional',
     )
-    score(paths['generations'], benchmark, path=paths['scores'], device=device, workers=workers)
+    score(paths['generations'], benchmark, path=paths['scores'], workers=workers)
     manifest = replace(
         benchmark.manifest, reference={name: sha256(path) for name, path in paths.items()}
     )
@@ -97,7 +89,6 @@ def build(
     original: Path,
     root: Path,
     *,
-    device: torch.device | str,
     workers: int | None = None,
 ) -> Benchmark:
     """Build a complete bundle under a local bundle root.
@@ -107,27 +98,24 @@ def build(
         original: The original log.
         root: The bundle root; the bundle is written to `root/<dataset>/`, the layout
             `load_benchmark(dataset, root=root)` reads.
-        device: Where the signature kernel is calibrated and solved.
         workers: Scoring processes for the reference, one per CPU when None.
 
     Returns:
         The verified bundle.
     """
     directory = root / spec.name
-    build_protocol(spec, original, directory, device=device)
-    return add_reference(Benchmark(directory), device=device, workers=workers)
+    build_protocol(spec, original, directory)
+    return add_reference(Benchmark(directory), workers=workers)
 
 
-def rebuild(benchmark: Benchmark, original: Path, *, device: torch.device | str) -> None:
+def rebuild(benchmark: Benchmark, original: Path) -> None:
     """Rebuild a bundle's protocol files from the original log and require its fingerprint.
 
     Raises:
         ValueError: If the rebuilt fingerprint differs, naming the files that differ.
     """
     with tempfile.TemporaryDirectory() as temporary:
-        manifest = build_protocol(
-            benchmark.spec, original, Path(temporary) / 'bundle', device=device
-        )
+        manifest = build_protocol(benchmark.spec, original, Path(temporary) / 'bundle')
     if manifest.fingerprint != benchmark.fingerprint:
         expected = benchmark.manifest.files | {'original': benchmark.manifest.original_sha256}
         actual = manifest.files | {'original': manifest.original_sha256}

@@ -1,5 +1,4 @@
 import pandas as pd
-import torch
 
 from pseval.benchmark.bundle import Benchmark
 from pseval.generation.join import join_draws
@@ -15,7 +14,6 @@ def validate(
     num_samples: int = 32,
     seed: int = 42,
     batch_size: int = 256,
-    device: torch.device | str = 'cpu',
 ) -> dict[str, float]:
     """Score a model on every validation prefix.
 
@@ -25,7 +23,6 @@ def validate(
         num_samples: Draws per prefix, at least `MIN_DRAWS`.
         seed: Seed of the draws.
         batch_size: Prefixes per `sample` call.
-        device: Where the signature kernel is solved.
 
     Returns:
         Every metric's equal-weight mean over the split, in `METRIC_KEYS` order. Which one
@@ -40,7 +37,7 @@ def validate(
     log = benchmark.validation
     cuts = log.cuts()
 
-    scorer = benchmark.scorer(device)
+    scorer = benchmark.scorer
     scores = []
     # Score the prefixes in batches, to avoid memory blowup on large logs
     for batch, start in enumerate(range(0, len(cuts), batch_size)):

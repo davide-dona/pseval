@@ -63,7 +63,7 @@ def generate(
         seed=seed,
         metadata=dict(metadata or {}),
     )
-    scorer = benchmark.scorer()
+    scorer = benchmark.scorer
     with GenerationWriter(path, provenance, vocabulary=scorer.codes.vocabulary) as writer:
         starts = range(0, len(keys), batch_size)
         for batch, start in enumerate(tqdm(starts, desc='Generating', unit='batch')):

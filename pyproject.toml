@@ -10,6 +10,8 @@ dependencies = [
     "numpy>=2.5.1",
     "pandas>=3.0.5",
     "pyarrow>=25.0.0",
+    "pysiglib>=4.0.0",
+    "pysiglib[cuda]>=4.0.0 ; sys_platform == 'linux'",
     "rapidfuzz>=3.14.5",
     "scipy>=1.18.0",
     "torch>=2.13.0",

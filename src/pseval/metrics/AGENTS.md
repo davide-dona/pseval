@@ -8,12 +8,12 @@ belongs to `generation` and `scoring`. In shape comments, `K` counts a prefix's 
 
 | Module | Owns |
 | --- | --- |
-| `scorer.py` | `Scorer`: fit, save, load, device placement, `require_draws`, and batch scoring. |
+| `scorer.py` | `Scorer`: fit, save, load, `require_draws`, and batch scoring. |
 | `columns.py` | `PrefixScores`, `METRIC_KEYS`, `PROPER_SCORES`, and `MIN_DRAWS`. |
 | `prepared.py` | `PreparedPrefix`: values every metric shares, built one batch at a time. |
 | `definitions/` | One function per metric group, mapping a `PreparedPrefix` to its columns. |
 | `functions/` | Pure numeric helpers: scoring rules, randomized PIT, and sequence distances. |
-| `signature/` | Path embedding, train calibration, and the Goursat PDE solvers of the signature kernel. |
+| `signature.py` | `SignatureKernel`: path embedding, train calibration, and batched Gram matrices. |
 | `vocabulary.py` | `ActivityCodes`, spelling each activity as one private-use character, and `UNK`. |
 
 ## Contracts
@@ -35,5 +35,5 @@ belongs to `generation` and `scoring`. In shape comments, `K` counts a prefix's 
   suffix is not proper. The signature kernel score covers activities and times jointly.
 - The PIT noise is seeded from the prefix key alone, so a score never depends on the batch or the
   worker that computed it.
-- The CPU anti-diagonal solver and the CUDA Triton sweep run the same float32 scheme and must
-  agree up to rounding. `goursat.py` is imported only on CUDA.
+- pySigLib solves the signature kernel on the current CUDA device, in float32. Pairs of paths
+  with different lengths share a solver call by repeating each path's last point.

@@ -1,8 +1,6 @@
 from functools import cached_property
 from pathlib import Path
 
-import torch
-
 from pseval.benchmark.manifest import MANIFEST, PROTOCOL_FILES, REFERENCE_FILES, Manifest
 from pseval.benchmark.specs import SPECS, DatasetSpec
 from pseval.benchmark.splits import read_split
@@ -87,9 +85,10 @@ class Benchmark:
         """The test split, cut only by `pseval.generate` and read by scoring."""
         return self._read('test')
 
-    def scorer(self, device: torch.device | str = 'cpu') -> Scorer:
-        """The protocol fitted on train, solving the signature kernel on `device`."""
-        return self._scorer.on(device)
+    @property
+    def scorer(self) -> Scorer:
+        """The protocol fitted on train."""
+        return self._scorer
 
     def _reference_scores(self) -> Path:
         """The scores of the unconditional reference."""

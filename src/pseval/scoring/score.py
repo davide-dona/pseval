@@ -31,16 +31,15 @@ class _Worker:
 _worker: _Worker
 
 
-def _init_worker(generations: Path, directory: Path, device: torch.device, processes: int) -> None:
+def _init_worker(generations: Path, directory: Path, processes: int) -> None:
     global _worker
     # Each process caches device memory its peers cannot reclaim, so each gets an equal share.
-    if device.type == 'cuda':
-        torch.cuda.set_per_process_memory_fraction(1 / processes, device)
+    torch.cuda.set_per_process_memory_fraction(1 / processes)
     benchmark = Benchmark(directory)
     _worker = _Worker(
         generations=Generations(generations),
         test=benchmark._test(),
-        scorer=benchmark.scorer(device),
+        scorer=benchmark.scorer,
     )
 
 
@@ -64,17 +63,17 @@ def _score_block(block: int) -> pd.DataFrame:
 
 
 def _scored_blocks(
-    generations: Path, benchmark: Benchmark, *, device: torch.device, blocks: int, processes: int
+    generations: Path, benchmark: Benchmark, *, blocks: int, processes: int
 ) -> Iterator[pd.DataFrame]:
     """Score every row group across spawned processes, yielding them in file order.
 
-    Spawned rather than forked, so each process can open its own CUDA context on `device`.
+    Spawned rather than forked, so each process can open its own CUDA context.
     """
     with ProcessPoolExecutor(
         max_workers=processes,
         mp_context=multiprocessing.get_context('spawn'),
         initializer=_init_worker,
-        initargs=(generations, benchmark.directory, device, processes),
+        initargs=(generations, benchmark.directory, processes),
     ) as executor:
         yield from executor.map(_score_block, range(blocks))
 
@@ -84,7 +83,6 @@ def score(
     benchmark: Benchmark,
     *,
     path: Path | None = None,
-    device: torch.device | str = 'cpu',
     workers: int | None = None,
 ) -> Path:
     """Score a generations file and write the scores file.
@@ -99,7 +97,6 @@ def score(
         benchmark: The benchmark it was generated on.
         path: Destination, `scores.parquet` beside the generations by default, replaced if it
             exists.
-        device: Where the signature kernel is solved, shared by every worker.
         workers: Scoring processes, one per CPU when None.
 
     Returns:
@@ -109,7 +106,6 @@ def score(
         ValueError: If the generations break the protocol contract. A partial scores file is
             removed.
     """
-    device = torch.device(device)
     path = generations.with_name('scores.parquet') if path is None else path
     with Generations(generations) as file:
         provenance = file.provenance
@@ -126,9 +122,7 @@ def score(
         ScoresWriter(path, replace(provenance, generations_sha256=sha256(generations))) as writer,
         tqdm(total=prefixes, desc='Scoring', unit='prefix') as progress,
     ):
-        for block in _scored_blocks(
-            generations, benchmark, device=device, blocks=blocks, processes=processes
-        ):
+        for block in _scored_blocks(generations, benchmark, blocks=blocks, processes=processes):
             writer.write(block)
             progress.update(len(block))
     return path

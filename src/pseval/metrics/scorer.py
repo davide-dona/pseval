@@ -1,6 +1,6 @@
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from functools import cached_property
 from itertools import pairwise
 from pathlib import Path
@@ -8,14 +8,13 @@ from typing import Self
 
 import numpy as np
 import pandas as pd
-import torch
 from declarray import Checker, Constraint, DeclareModel, mine
 
 from pseval.data import ACTIVITY_KEY, CASE_KEY, Log
 from pseval.generation.records import Generation
 from pseval.metrics.columns import METRIC_KEYS, PrefixScores
 from pseval.metrics.prepared import PreparedPrefix
-from pseval.metrics.signature.kernel import SignatureKernel
+from pseval.metrics.signature import SignatureKernel
 from pseval.metrics.vocabulary import UNK, ActivityCodes
 
 
@@ -42,7 +41,6 @@ class Scorer:
         declare_min_support: float,
         declare_min_confidence: float,
         declare_max_cardinality: int,
-        device: torch.device | str,
     ) -> Self:
         """Fit the vocabulary, mine the Declare model, and calibrate the signature kernel.
 
@@ -52,7 +50,6 @@ class Scorer:
             declare_min_support: Least non-vacuous support a mined constraint reaches.
             declare_min_confidence: Least confidence a mined constraint reaches.
             declare_max_cardinality: Largest occurrence count of the cardinality templates.
-            device: Where the signature kernel's bandwidth median is computed.
 
         Raises:
             ValueError: If the train split holds an activity named `UNK`.
@@ -71,7 +68,7 @@ class Scorer:
                 min_confidence=declare_min_confidence,
                 max_cardinality=declare_max_cardinality,
             ),
-            kernel=_fit_kernel(train, device=device),
+            kernel=_fit_kernel(train),
         )
 
     def save(self, *, protocol: Path, declare: Path) -> None:
@@ -91,23 +88,19 @@ class Scorer:
 
     @classmethod
     def load(cls, *, protocol: Path, declare: Path) -> Self:
-        """Read a fitted protocol written by `save`, its kernel solving on the CPU."""
+        """Read a fitted protocol written by `save`."""
         payload = json.loads(protocol.read_bytes())
         return cls(
             codes=ActivityCodes(payload['vocabulary']),
             max_suffix_length=int(payload['max_suffix_length']),
             declare=DeclareModel.load(declare),
-            kernel=SignatureKernel.from_dict(payload['signature_kernel'], device='cpu'),
+            kernel=SignatureKernel.from_dict(payload['signature_kernel']),
         )
 
     @cached_property
     def checker(self) -> Checker:
         """A Declare checker of traces spelled by `codes`."""
         return _code_checker(self.declare, self.codes.codes)
-
-    def on(self, device: torch.device | str) -> Self:
-        """Return this scorer solving the signature kernel on `device`."""
-        return replace(self, kernel=self.kernel.on(torch.device(device)))
 
     def require_draws(self, generation: Generation, *, num_samples: int) -> None:
         """Require one prefix's draws to honor the protocol contract.
@@ -149,7 +142,7 @@ class Scorer:
         )
 
 
-def _fit_kernel(train: Log, *, device: torch.device | str) -> SignatureKernel:
+def _fit_kernel(train: Log) -> SignatureKernel:
     """Calibrate the signature kernel on the longest suffix of every training case.
 
     A case's longest suffix follows its first event, since every prefix holds at least one event,
@@ -160,7 +153,7 @@ def _fit_kernel(train: Log, *, device: torch.device | str) -> SignatureKernel:
     minutes = train.inter_event_minutes()
     suffixes = [(axes[a + 1 : b], minutes[a + 1 : b]) for a, b in pairwise(train.case_offsets)]
     alphabet = int(axes.max()) + 1 if len(axes) else 0
-    return SignatureKernel.fit(suffixes, alphabet=alphabet, device=device)
+    return SignatureKernel.fit(suffixes, alphabet=alphabet)
 
 
 def _code_checker(model: DeclareModel, codes: Mapping[str, str]) -> Checker:
