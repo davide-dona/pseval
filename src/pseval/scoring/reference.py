@@ -1,11 +1,11 @@
 import numpy as np
 
 from pseval.data import ACTIVITY_KEY, Log, PrefixBatch, SuffixDraws
-from pseval.protocol import SuffixModel
+from pseval.model import SuffixModel
 
 
 class Unconditional(SuffixModel):
-    """The unconditional reference model, whose scores every bundle stores for `skill`.
+    """The unconditional reference model, whose scores every benchmark stores for `skill`.
 
     It draws real train suffixes regardless of the prefix: each draw is the observed suffix,
     activities and inter-event minutes, of a train cut drawn uniformly from all of them, so the

@@ -1,16 +1,13 @@
 from collections.abc import Mapping, Sequence
 from types import MappingProxyType
 
+import numpy as np
+
 # The vocabulary entry an activity unseen in the train split is scored as.
 UNK = 'UNK'
 
 # Start of the Unicode private use area, where activity codes are drawn from.
 _FIRST_CODE = 0xE000
-
-# Boundaries the sequence metrics pad spelled suffixes with, distinct and below every activity
-# code.
-START_CODE = '\x02'
-END_CODE = '\x03'
 
 
 class ActivityCodes:
@@ -52,3 +49,9 @@ class ActivityCodes:
             unknown = self._codes[UNK]
             return ''.join(self._codes.get(name, unknown) for name in names)
         return ''.join(self._codes[name] for name in names)
+
+
+def vocabulary_indices(spelled: str) -> np.ndarray:
+    """Return `[L]` int64 the vocabulary index of each code of a spelled sequence."""
+    codes = np.frombuffer(spelled.encode('utf-32-le'), dtype=np.uint32).astype(np.int64)
+    return codes - _FIRST_CODE

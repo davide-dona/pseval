@@ -3,12 +3,11 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from pseval.benchmark.bundle import Benchmark
+from pseval.benchmark import Benchmark
 from pseval.generation.join import join_draws
 from pseval.generation.provenance import Provenance, Selection
 from pseval.generation.store import GenerationWriter
-from pseval.metrics import MIN_DRAWS
-from pseval.protocol import SuffixModel, batch_seed
+from pseval.model import SuffixModel, batch_seed
 
 
 def generate(
@@ -39,7 +38,7 @@ def generate(
         label: The model's name, stored with the generations and their scores.
         metadata: Anything the author records with the model, as a JSON object, such as a
             checkpoint hash or a configuration.
-        num_samples: Draws per prefix, at least `MIN_DRAWS`.
+        num_samples: Draws per prefix, at least two.
         seed: Seed every batch seed is derived from.
         batch_size: Prefixes per `sample` call.
 
@@ -47,11 +46,9 @@ def generate(
         `path`.
 
     Raises:
-        ValueError: If `num_samples` is below `MIN_DRAWS` or the draws break the protocol
-            contract. The file is removed.
+        ValueError: If the draws break the protocol contract, which also asks for at least two
+            draws per prefix. The file is removed.
     """
-    if num_samples < MIN_DRAWS:
-        raise ValueError(f'Generation needs at least {MIN_DRAWS} draws per prefix')
     test = benchmark._test()
     keys = sorted(test.cuts(), key=lambda key: key[1])
     provenance = Provenance(

@@ -10,6 +10,7 @@ the only artifact a model contributes to its scores.
 | `generate.py` | `generate`: test cuts, batching, batch seeds, and the write loop. |
 | `join.py` | Validating a model's `SuffixDraws` and joining them with the observed prefix and suffix. |
 | `records.py` | `DecodedEvents`, the `Draws` of one prefix, and `Generation`. |
+| `codes.py` | `ActivityCodes`, spelling each activity as one private-use character, and `UNK`. |
 | `store.py` | The generations Parquet schema, `GenerationWriter`, and the `Generations` reader. |
 | `provenance.py` | `Selection` and `Provenance`, stored in the metadata of generations and scores files. |
 
@@ -18,9 +19,9 @@ the only artifact a model contributes to its scores.
 - A model sees only `Log.prefixes` output. The observed suffix is joined after `sample` returns,
   through `observe`, and never enters a sampling path.
 - Test prefixes are sorted by prefix length and batched; batch `b` gets `batch_seed(seed, b)`.
-  `num_samples` is at least `MIN_DRAWS`.
 - Draws are checked before they are written: names must be in the vocabulary, and
-  `Scorer.require_draws` checks the count, the length cap, and finite nonnegative minutes.
+  `Scorer.require_draws` checks the count, at least two, the length cap, and finite nonnegative
+  minutes.
   Observed activities unseen in train are spelled `UNK`; a drawn one is an error.
 - The file holds one row per prefix: the key and, per draw, its activities, float32 minutes,
   and truncation flag. The vocabulary and `Provenance` live in the schema

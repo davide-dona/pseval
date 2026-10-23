@@ -1,15 +1,16 @@
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
 class DatasetSpec:
     """How one benchmark is built from its original log.
 
-    The column fields name the original log's case, activity, resource, and timestamp columns;
-    `text_columns` names further columns read as text rather than parsed as numbers. The rest
-    fixes the protocol: the out-of-time test fraction and the validation fraction drawn at random
-    from the train cases with `split_seed`, the percentiles of the outlier and late-start filters,
-    and the Declare mining thresholds.
+    `original_sha256` is the hash of the original log the benchmark is built from. The column
+    fields name its case, activity, resource, and timestamp columns; `text_columns` names further
+    columns read as text rather than parsed as numbers. The rest fixes the protocol: the
+    out-of-time test fraction and the validation fraction drawn at random from the train cases
+    with `split_seed`, the percentiles of the outlier and late-start filters, and the Declare
+    mining thresholds.
     """
 
     name: str
@@ -18,6 +19,7 @@ class DatasetSpec:
     resource_column: str
     timestamp_column: str
     separator: str
+    original_sha256: str
     text_columns: tuple[str, ...] = ()
     validation_fraction: float = 0.15
     test_fraction: float = 0.2
@@ -34,12 +36,6 @@ class DatasetSpec:
     declare_min_confidence: float = 1.0
     declare_max_cardinality: int = 2
 
-    def as_dict(self) -> dict[str, object]:
-        """The spec as recorded in a bundle manifest."""
-        spec = asdict(self)
-        spec['text_columns'] = list(self.text_columns)
-        return spec
-
 
 SEPSIS = DatasetSpec(
     name='sepsis',
@@ -48,6 +44,7 @@ SEPSIS = DatasetSpec(
     resource_column='Resource',
     timestamp_column='time:timestamp',
     separator=';',
+    original_sha256='2355e82c79b411b3865472bb08e073ed99a4d97880f6a20aa5d25dc7f8307bcb',
 )
 BPIC12 = DatasetSpec(
     name='bpic12',
@@ -56,6 +53,7 @@ BPIC12 = DatasetSpec(
     resource_column='org:resource',
     timestamp_column='CompleteTimestamp',
     separator=',',
+    original_sha256='cc781b7ce9422cc88901c35b834beab318b379e0e91ae48a8d34b3cd0b695a7b',
 )
 BPIC17 = DatasetSpec(
     name='bpic17',
@@ -64,6 +62,7 @@ BPIC17 = DatasetSpec(
     resource_column='org:resource',
     timestamp_column='time:timestamp',
     separator=';',
+    original_sha256='ca395caee223c6f17c8f65a2f8ddb0eef8cd7c7297c98991b3d63595682d78ab',
 )
 BPIC19 = DatasetSpec(
     name='bpic19',
@@ -72,6 +71,7 @@ BPIC19 = DatasetSpec(
     resource_column='org:resource',
     timestamp_column='time:timestamp',
     separator=';',
+    original_sha256='eae54022cecd7f3cc67aec1fb9a7aa2a2c394b9c1b1113b4d86320d12451c8ae',
     text_columns=('case:GR-Based Inv. Verif.', 'case:Goods Receipt'),
 )
 

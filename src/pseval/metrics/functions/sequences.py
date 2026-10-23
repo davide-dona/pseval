@@ -6,7 +6,10 @@ from rapidfuzz import process
 from rapidfuzz.distance import DamerauLevenshtein
 from scipy.spatial.distance import cdist
 
-from pseval.metrics.vocabulary import END_CODE, START_CODE
+# Boundaries sequences are padded with, distinct and outside the private use area activity codes
+# are drawn from.
+START_CODE = '\x02'
+END_CODE = '\x03'
 
 
 def damerau_levenshtein_distances(queries: Sequence[str], choices: Sequence[str]) -> np.ndarray:

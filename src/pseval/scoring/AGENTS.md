@@ -10,12 +10,13 @@ to the numbers a paper reports. It also scores validation prefixes in memory for
 | `score.py` | `score`: input checks and the spawned worker pool over row groups. |
 | `store.py` | The scores Parquet schema, `ScoresWriter`, `Scores`, and `read_scores`. |
 | `summary.py` | `Summary`: equal-weight means overall and by prefix and true suffix length. |
-| `skill.py` | `skill`: each proper score against the bundle's unconditional reference. |
+| `skill.py` | `skill`: each proper score against the benchmark's unconditional reference. |
+| `reference.py` | `Unconditional`, the reference model whose scores every benchmark stores. |
 | `validation.py` | `validate`: in-memory means over every validation prefix, writing no file. |
 
 ## Contracts
 
-- `score` rejects a generations file from another bundle, spelled on another vocabulary, or not
+- `score` rejects a generations file from another benchmark, spelled on another vocabulary, or not
   answering every test cut exactly once. Each prefix's draws are checked again with
   `Scorer.require_draws`, since the file may come from outside `generate`.
 - Workers are spawned, not forked, so each opens its own CUDA context. Each worker opens its own

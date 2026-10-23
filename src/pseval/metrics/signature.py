@@ -7,6 +7,9 @@ import pysiglib
 import torch
 from scipy.spatial.distance import pdist
 
+from pseval.generation.codes import vocabulary_indices
+from pseval.generation.records import DecodedEvents
+
 # Each cell of the PDE grid is split into 2**DYADIC_ORDER steps along both paths.
 DYADIC_ORDER = 1
 
@@ -28,13 +31,15 @@ class SignatureKernel:
 
     A suffix is embedded as a path through `[tau, counts]`: `tau` accumulates
     `time_scale * log1p(minutes)` over its inter-event times, and `counts` holds the cumulative
-    occurrences of each activity. Each event first advances `tau`, then steps its activity
-    count. Both constants are fitted on the train split. Kernels are solved by pySigLib on CUDA,
-    in float32, since float64 runs at a small fraction of its speed on workstation GPUs.
+    occurrences of each activity, one axis per vocabulary entry. Each event first advances `tau`,
+    then steps its activity count. Both constants are fitted on the train split. Kernels are
+    solved by pySigLib on CUDA, in float32, since float64 runs at a small fraction of its speed
+    on workstation GPUs.
     """
 
     time_scale: float
     bandwidth: float
+    alphabet: int
 
     @classmethod
     def fit(cls, traces: Sequence[tuple[np.ndarray, np.ndarray]], *, alphabet: int) -> Self:
@@ -57,27 +62,41 @@ class SignatureKernel:
             len(points), size=min(BANDWIDTH_POINTS, len(points)), replace=False
         )
         distances = pdist(points[chosen])
-        return cls(time_scale=time_scale, bandwidth=float(np.median(distances[distances > 0])))
+        return cls(
+            time_scale=time_scale,
+            bandwidth=float(np.median(distances[distances > 0])),
+            alphabet=alphabet,
+        )
 
     @classmethod
     def from_dict(cls, value: dict[str, float]) -> Self:
         """Read a stored calibration."""
-        return cls(time_scale=float(value['time_scale']), bandwidth=float(value['bandwidth']))
+        return cls(
+            time_scale=float(value['time_scale']),
+            bandwidth=float(value['bandwidth']),
+            alphabet=int(value['alphabet']),
+        )
 
     def as_dict(self) -> dict[str, float]:
-        """The calibration as stored in a benchmark bundle."""
-        return {'time_scale': self.time_scale, 'bandwidth': self.bandwidth}
+        """The calibration as stored in a benchmark."""
+        return {
+            'time_scale': self.time_scale,
+            'bandwidth': self.bandwidth,
+            'alphabet': self.alphabet,
+        }
 
-    def embed(
-        self, activities: str, minutes: np.ndarray, *, offset: int, alphabet: int
-    ) -> np.ndarray:
-        """Embed one suffix of activity codes, axis `ord(code) - offset`, as path points.
+    def embed(self, events: DecodedEvents) -> np.ndarray:
+        """Embed one suffix as path points, its activities on their vocabulary axes.
 
         Returns:
             Points shaped `[2L + 1, 1 + alphabet]`, float64.
         """
-        axes = np.frombuffer(activities.encode('utf-32-le'), dtype=np.uint32).astype(np.int64)
-        return embed(axes - offset, minutes, time_scale=self.time_scale, alphabet=alphabet)
+        return embed(
+            vocabulary_indices(events.activities),
+            events.inter_event_time_minutes,
+            time_scale=self.time_scale,
+            alphabet=self.alphabet,
+        )
 
     def grams(self, groups: Sequence[Sequence[np.ndarray]]) -> list[np.ndarray]:
         """Return the normalized kernel matrix of each group of paths, solved in one batch.

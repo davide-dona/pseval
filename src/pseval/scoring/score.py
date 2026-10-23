@@ -9,8 +9,7 @@ import pandas as pd
 import torch
 from tqdm import tqdm
 
-from pseval.benchmark.bundle import Benchmark
-from pseval.benchmark.manifest import sha256
+from pseval.benchmark import Benchmark, sha256
 from pseval.data import Log
 from pseval.generation.join import observe
 from pseval.generation.store import Generations
@@ -47,8 +46,8 @@ def _score_block(block: int) -> pd.DataFrame:
     """Validate and score one row group, one scores row per prefix."""
     scorer = _worker.scorer
     generations = [
-        observe(_worker.test, key, samples, codes=scorer.codes)
-        for key, samples in _worker.generations.block(block)
+        observe(_worker.test, key, draws, codes=scorer.codes)
+        for key, draws in _worker.generations.block(block)
     ]
     for generation in generations:
         scorer.require_draws(generation, num_samples=_worker.generations.provenance.num_samples)
@@ -56,7 +55,7 @@ def _score_block(block: int) -> pd.DataFrame:
         {
             'case_id': [generation.case_id for generation in generations],
             'prefix_len': [generation.prefix_len for generation in generations],
-            'suffix_len': [len(generation.truth) for generation in generations],
+            'suffix_len': [len(generation.observed) for generation in generations],
         }
     )
     return pd.concat([keys, scorer.score(generations)], axis=1)
@@ -88,8 +87,8 @@ def score(
     """Score a generations file and write the scores file.
 
     The file must answer every test prefix exactly once with its stored draw count and come from
-    this benchmark. Prefixes and observed suffixes are read from the
-    benchmark. Each row group is scored in a worker process; the scores file holds one row per
+    this benchmark. Prefixes and observed suffixes are read from the benchmark. Each row group
+    is scored in a worker process; the scores file holds one row per
     prefix in file order, with every metric.
 
     Args:

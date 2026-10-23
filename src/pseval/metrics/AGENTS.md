@@ -9,25 +9,24 @@ belongs to `generation` and `scoring`. In shape comments, `K` counts a prefix's 
 | Module | Owns |
 | --- | --- |
 | `scorer.py` | `Scorer`: fit, save, load, `require_draws`, and batch scoring. |
-| `columns.py` | `PrefixScores`, `METRIC_KEYS`, `PROPER_SCORES`, and `MIN_DRAWS`. |
-| `prepared.py` | `PreparedPrefix`: values every metric shares, built one batch at a time. |
-| `definitions/` | One function per metric group, mapping a `PreparedPrefix` to its columns. |
+| `columns.py` | `PrefixScores`, `METRIC_KEYS`, and `PROPER_SCORES`. |
+| `inputs.py` | `MetricInputs`: a generation and the values its metrics share, built per batch. |
+| `definitions/` | One function per metric group, mapping `MetricInputs` to its columns. |
 | `functions/` | Pure numeric helpers: scoring rules, randomized PIT, and sequence distances. |
 | `signature.py` | `SignatureKernel`: path embedding, train calibration, and batched Gram matrices. |
-| `vocabulary.py` | `ActivityCodes`, spelling each activity as one private-use character, and `UNK`. |
 
 ## Contracts
 
-- `PrefixScores` field order is the scores file column order. Adding a metric means a commented
-  field there and an entry in one `definitions/` function; it changes the scores schema, so older
-  scores files stop loading.
-- Every scored prefix has at least `MIN_DRAWS` draws, so neither definitions nor helpers guard
-  smaller draw counts.
+- `PrefixScores` field order is the scores file column order. Adding a metric means a field there,
+  commented only when its name leaves its meaning ambiguous, and an entry in one `definitions/`
+  function; it changes the scores schema, so older scores files stop loading.
+- `Scorer.require_draws` admits only prefixes with at least two draws, so neither definitions nor
+  helpers guard smaller draw counts.
 - A `definitions/` function unpacks its inputs and converts units at the top, names only values
   that several columns use, and returns one expression per column in `PrefixScores` order.
 - `PROPER_SCORES` are the fair scoring rules models are ranked on, lower is better. Every other
   column is a diagnostic and never ranks.
-- `PreparedPrefix.of_batch` makes one Declare checker call and one signature kernel call per
+- `MetricInputs.of_batch` makes one Declare checker call and one signature kernel call per
   batch, since both have a fixed cost per call. Score batches, not single prefixes.
 - Compute CRPS and its spread from gaps between sorted draws with nonnegative weights. Never as
   accuracy minus spread, which cancels catastrophically under extreme draws.

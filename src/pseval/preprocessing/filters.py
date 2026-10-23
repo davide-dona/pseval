@@ -1,4 +1,3 @@
-import numpy as np
 import pandas as pd
 
 from pseval.data import CASE_KEY, TIMESTAMP_KEY
@@ -10,24 +9,21 @@ def case_durations(log: pd.DataFrame) -> pd.Series:
     return (edges['max'] - edges['min']).dt.total_seconds() / 86_400.0
 
 
-def case_length_cutoff(log: pd.DataFrame, *, percentile: float) -> int:
-    """The case length in events at a percentile, rounded up."""
-    lengths = log.groupby(CASE_KEY)[CASE_KEY].size()
-    return int(np.ceil(np.percentile(lengths, percentile)))
+def case_lengths(log: pd.DataFrame) -> pd.Series:
+    """The length of every case in events, indexed by case."""
+    return log.groupby(CASE_KEY).size()
 
 
-def drop_cases_by_length(log: pd.DataFrame, *, max_length: int) -> pd.DataFrame:
-    """Keep the cases of at most `max_length` events."""
-    lengths = log.groupby(CASE_KEY)[CASE_KEY].transform('size')
-    return log[lengths <= max_length]
-
-
-def drop_cases_by_duration(log: pd.DataFrame, *, max_duration_days: float) -> pd.DataFrame:
-    """Keep the cases running at most `max_duration_days`, first event to last.
+def drop_outlier_cases(
+    log: pd.DataFrame, *, max_duration_days: float, max_length: int
+) -> pd.DataFrame:
+    """Keep the cases running at most `max_duration_days`, first event to last, and holding at
+    most `max_length` events.
 
     A case spanning decades is a broken timestamp rather than a slow process.
     """
-    return log[log[CASE_KEY].map(case_durations(log)) <= max_duration_days]
+    kept = (case_durations(log) <= max_duration_days) & (case_lengths(log) <= max_length)
+    return log[log[CASE_KEY].isin(kept.index[kept])]
 
 
 def drop_cases_starting_late(log: pd.DataFrame, *, min_observed_days: float) -> pd.DataFrame:

@@ -37,7 +37,7 @@ class Selection:
 class Provenance:
     """What a generations or scores file was produced from.
 
-    `dataset` and `fingerprint` identify the benchmark bundle. `num_samples` is the draw count of
+    `dataset` and `fingerprint` identify the benchmark. `num_samples` is the draw count of
     every prefix and `seed` the one the batch seeds are derived from. `label` names the model and
     `metadata` holds whatever the model author records with it, such as a checkpoint hash or a
     configuration, as a JSON object. `generations_sha256` is set on a scores file only, naming the
@@ -73,7 +73,7 @@ class Provenance:
         return cls(**value | {'selection': Selection(**value['selection'])})
 
     def require_benchmark(self, dataset: str, fingerprint: str) -> None:
-        """Require this record to name the given benchmark bundle.
+        """Require this record to name the given benchmark.
 
         Raises:
             ValueError: If the dataset or the fingerprint differs.

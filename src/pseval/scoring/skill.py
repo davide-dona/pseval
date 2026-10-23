@@ -1,4 +1,4 @@
-from pseval.benchmark.bundle import Benchmark
+from pseval.benchmark import Benchmark
 from pseval.metrics import PROPER_SCORES
 from pseval.scoring.store import Scores, read_scores
 

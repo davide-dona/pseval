@@ -37,17 +37,11 @@ def add_inter_event_minutes(log: pd.DataFrame) -> pd.DataFrame:
 def out_of_time_split(
     log: pd.DataFrame, *, validation_fraction: float, test_fraction: float, seed: int
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Series]:
-    """Split a log by time into train and test, and draw validation at random from train.
+    """Split a log out of time into train and test, and sample validation from train.
 
-    The separation time is the start of the case that begins once `1 - test_fraction` of them
-    already have. Train keeps every case finished before it. Test keeps every case still running
-    at it, so a case running across it is a test case whose earlier prefixes a training run could
-    already have seen; those prefixes are withheld from scoring through its first cut rather than
-    the case being dropped.
-
-    Validation is a random sample of whole training cases. A time slice ending at the separation
-    would lose every long case starting inside it to test, so its prefixes would face far shorter
-    remaining times than test's.
+    The separation is the start of the case at the `1 - test_fraction` quantile of case starts.
+    Train keeps the cases finished before it, test the cases still running at it, and validation
+    is a seeded random sample of whole train cases.
 
     Args:
         log: The filtered log, sorted by case start and then by timestamp.

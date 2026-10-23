@@ -6,78 +6,59 @@ from pseval.metrics.definitions.conformance import conformance
 from pseval.metrics.definitions.joint import joint
 from pseval.metrics.definitions.remaining_time import remaining_time
 from pseval.metrics.definitions.suffix_length import suffix_length
-from pseval.metrics.prepared import PreparedPrefix
+from pseval.metrics.inputs import MetricInputs
 
 
 @dataclass(frozen=True, slots=True)
 class PrefixScores:
     """Every metric of one prefix. Field order is the scores column order.
 
-    DLS is the normalized Damerau-Levenshtein similarity and DLD its distance, both with a shared
-    terminal token.
+    DLS is the normalized Damerau-Levenshtein similarity and DLD its distance. Scoring rules are
+    fair, and truth quantiles are randomized PITs of the observed value among the draws.
     """
 
-    # Fair kernel score of the joint activity and time draws, under the cosine-normalized
-    # signature kernel.
     signature_kernel_score: float
 
-    # Mean DLS of the sampled activity suffixes to the observed one.
     dls_sample_mean: float
-    # Mean DLD over ordered pairs of different draws.
     activity_dld_spread: float
-    # The DLD spread minus the mean DLD to the observed suffix. For a calibrated forecast the
-    # observed suffix is one more draw, so it is zero; negative is overconfident.
+    # Zero for a calibrated forecast, negative when overconfident.
     activity_spread_error_gap: float
-    # Distinct activity suffixes per draw, 1.0 when every draw differs.
     unique_suffix_ratio: float
-    # Fair activity energy scores on DLD, exact-match distance, and multiset Jaccard distance
-    # over padded bigrams.
     energy_score_dls: float
     energy_score_exact: float
+    # On the multiset Jaccard distance between padded bigrams.
     energy_score_bigram: float
 
-    # Fair suffix length CRPS in events, then its error and spread terms: the mean absolute error
-    # of the draws, and half the mean distance between them.
     suffix_length_crps: float
     suffix_length_crps_error: float
     suffix_length_crps_spread: float
-    # Mean sampled suffix length minus the observed one.
     suffix_length_signed_error: float
-    # Randomized PIT of the observed suffix length among the draws.
     suffix_length_truth_quantile: float
-    # Share of draws closed at the length cap without ending.
     truncated_draw_rate: float
 
-    # Fair remaining-time CRPS in days, then its error and spread terms.
     remaining_time_crps_days: float
     remaining_time_crps_error_days: float
     remaining_time_crps_spread_days: float
-    # Mean `log1p` sampled remaining days minus the observed one.
+    # On `log1p` days.
     remaining_time_log_error: float
-    # Randomized PIT of the observed remaining time among the draws.
     remaining_time_truth_quantile: float
 
-    # Rate of sampled full traces satisfying every Declare constraint, and 1.0 when the
-    # observed one does.
     full_conformance_sample_rate: float
     full_conformance_observed: float
 
     @classmethod
-    def of(cls, prefix: PreparedPrefix) -> Self:
+    def of(cls, inputs: MetricInputs) -> Self:
         """Score one prefix."""
         return cls(
-            **joint(prefix),
-            **activity(prefix),
-            **suffix_length(prefix),
-            **remaining_time(prefix),
-            **conformance(prefix),
+            **joint(inputs),
+            **activity(inputs),
+            **suffix_length(inputs),
+            **remaining_time(inputs),
+            **conformance(inputs),
         )
 
 
 METRIC_KEYS = tuple(field.name for field in fields(PrefixScores))
-
-# The fewest draws per prefix every metric is defined on: the pairwise terms need two.
-MIN_DRAWS = 2
 
 # The proper scoring rules, lower is better. Models are ranked on them.
 PROPER_SCORES = (

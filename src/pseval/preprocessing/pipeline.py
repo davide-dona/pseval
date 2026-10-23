@@ -3,16 +3,15 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from pseval.benchmark.specs import DatasetSpec
 from pseval.data import ACTIVITY_KEY, CASE_KEY, RESOURCE_KEY, TIMESTAMP_KEY
 from pseval.preprocessing.filters import (
     case_durations,
-    case_length_cutoff,
-    drop_cases_by_duration,
-    drop_cases_by_length,
+    case_lengths,
     drop_cases_starting_late,
+    drop_outlier_cases,
 )
 from pseval.preprocessing.split import add_inter_event_minutes, out_of_time_split, sort_log
+from pseval.specs import DatasetSpec
 
 
 def read_original(spec: DatasetSpec, path: Path) -> pd.DataFrame:
@@ -44,9 +43,9 @@ def split_log(
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Series, int]:
     """Filter, sort, and split an original log.
 
-    Drops the cases running longer than the duration percentile and longer than the length
+    Drops the cases running longer than the duration percentile or longer than the length
     percentile, both read off the log as read, then the cases starting too late to be seen
-    finishing, read off what the outlier filters left. Sorts the rest, adds each event's
+    finishing, read off what the outlier filter left. Sorts the rest, adds each event's
     inter-event minutes, and splits it out of time.
 
     Returns:
@@ -55,9 +54,8 @@ def split_log(
     """
     log = read_original(spec, original)
     max_duration_days = float(np.percentile(case_durations(log), spec.max_duration_percentile))
-    max_length = case_length_cutoff(log, percentile=spec.max_length_percentile)
-    log = drop_cases_by_duration(log, max_duration_days=max_duration_days)
-    log = drop_cases_by_length(log, max_length=max_length)
+    max_length = int(np.ceil(np.percentile(case_lengths(log), spec.max_length_percentile)))
+    log = drop_outlier_cases(log, max_duration_days=max_duration_days, max_length=max_length)
     min_observed_days = float(
         np.percentile(case_durations(log), spec.min_observed_duration_percentile)
     )

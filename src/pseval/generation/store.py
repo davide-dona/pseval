@@ -10,9 +10,9 @@ import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 from pseval.data import PrefixKey
+from pseval.generation.codes import ActivityCodes
 from pseval.generation.provenance import Provenance
 from pseval.generation.records import Draws, Generation
-from pseval.metrics.vocabulary import ActivityCodes
 
 _VOCABULARY = b'vocabulary'
 
@@ -50,24 +50,17 @@ _FLOAT_LEAVES = ['generated_draws.list.element.inter_event_time_minutes.list.ele
 
 
 def _row(generation: Generation) -> dict:
-    samples = generation.samples
-    times = samples.inter_event_time_minutes
+    draws = generation.draws
     return {
         'case_id': generation.case_id,
         'prefix_len': generation.prefix_len,
         'generated_draws': [
             {
-                'activities': activities,
-                'inter_event_time_minutes': times[start:stop].tolist(),
+                'activities': events.activities,
+                'inter_event_time_minutes': events.inter_event_time_minutes.tolist(),
                 'truncated': bool(truncated),
             }
-            for activities, start, stop, truncated in zip(
-                samples.suffixes,
-                samples.offsets[:-1],
-                samples.offsets[1:],
-                samples.truncated,
-                strict=True,
-            )
+            for events, truncated in zip(draws, draws.truncated, strict=True)
         ],
     }
 
@@ -80,7 +73,7 @@ def _draws_from_table(table: pa.Table) -> list[tuple[PrefixKey, Draws]]:
     """
     draws = table.column('generated_draws').combine_chunks()
     draw_offsets = draws.offsets.to_numpy()
-    suffixes = pc.struct_field(draws.values, 'activities').to_pylist()
+    activities = pc.struct_field(draws.values, 'activities').to_pylist()
     truncated = pc.struct_field(draws.values, 'truncated').to_numpy(zero_copy_only=False)
     lists = pc.struct_field(draws.values, 'inter_event_time_minutes')
     times, time_offsets = lists.values.to_numpy().astype(np.float64), lists.offsets.to_numpy()
@@ -95,14 +88,14 @@ def _draws_from_table(table: pa.Table) -> list[tuple[PrefixKey, Draws]]:
     ):
         first, last = draw_offsets[row], draw_offsets[row + 1]
         row_time_offsets = time_offsets[first : last + 1]
-        samples = Draws(
-            suffixes=tuple(suffixes[first:last]),
+        draws = Draws(
+            activities=tuple(activities[first:last]),
             inter_event_time_minutes=times[row_time_offsets[0] : row_time_offsets[-1]],
             truncated=truncated[first:last],
         )
-        if not np.array_equal(row_time_offsets - row_time_offsets[0], samples.offsets):
+        if not np.array_equal(row_time_offsets - row_time_offsets[0], draws.offsets):
             raise ValueError(f'{key} has draw times that do not match their activities')
-        result.append((key, samples))
+        result.append((key, draws))
     return result
 
 

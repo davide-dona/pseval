@@ -1,5 +1,5 @@
 import math
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from functools import cached_property
 
@@ -27,12 +27,12 @@ class DecodedEvents:
 class Draws:
     """One prefix's drawn suffixes.
 
-    Draw `i` has `suffixes[i]` as its activities and
+    Draw `i` has `activities[i]` as its activities and
     `inter_event_time_minutes[offsets[i]:offsets[i + 1]]` as their times.
     """
 
-    # [K] The activities of each draw, in draw order.
-    suffixes: tuple[str, ...]
+    # [K] The activities of each draw.
+    activities: tuple[str, ...]
     # [E] float64 inter-event minutes of every draw, draw after draw.
     inter_event_time_minutes: np.ndarray
     # [K] Whether each draw was closed at the length cap without ending.
@@ -40,9 +40,9 @@ class Draws:
 
     @classmethod
     def of(cls, drawn: Sequence[DecodedEvents], *, truncated: Sequence[bool]) -> 'Draws':
-        """Gather one prefix's draws, in the order they were drawn."""
+        """Gather one prefix's draws."""
         return cls(
-            suffixes=tuple(events.activities for events in drawn),
+            activities=tuple(events.activities for events in drawn),
             inter_event_time_minutes=np.concatenate(
                 [np.zeros(0), *(events.inter_event_time_minutes for events in drawn)]
             ),
@@ -51,12 +51,18 @@ class Draws:
 
     def __len__(self) -> int:
         """How many draws were taken."""
-        return len(self.suffixes)
+        return len(self.activities)
+
+    def __iter__(self) -> Iterator[DecodedEvents]:
+        """Each draw's activities and times."""
+        times, offsets = self.inter_event_time_minutes, self.offsets
+        for draw, activities in enumerate(self.activities):
+            yield DecodedEvents(activities, times[offsets[draw] : offsets[draw + 1]])
 
     @cached_property
     def lengths(self) -> np.ndarray:
         """[K] How many events each draw holds."""
-        return np.fromiter(map(len, self.suffixes), np.int64, len(self))
+        return np.fromiter(map(len, self.activities), np.int64, len(self))
 
     @cached_property
     def offsets(self) -> np.ndarray:
@@ -78,8 +84,8 @@ class Generation:
 
     case_id: str
     prefix_activities: str
-    samples: Draws
-    truth: DecodedEvents
+    draws: Draws
+    observed: DecodedEvents
 
     @property
     def prefix_len(self) -> int:

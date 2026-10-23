@@ -1,9 +1,8 @@
 import pandas as pd
 
-from pseval.benchmark.bundle import Benchmark
+from pseval.benchmark import Benchmark
 from pseval.generation.join import join_draws
-from pseval.metrics import MIN_DRAWS
-from pseval.protocol import SuffixModel, batch_seed
+from pseval.model import SuffixModel, batch_seed
 from pseval.scoring.summary import means
 
 
@@ -20,7 +19,7 @@ def validate(
     Args:
         model: The model to score, its `sample` called on validation prefixes only.
         benchmark: The benchmark whose validation split to read.
-        num_samples: Draws per prefix, at least `MIN_DRAWS`.
+        num_samples: Draws per prefix, at least two.
         seed: Seed of the draws.
         batch_size: Prefixes per `sample` call.
 
@@ -29,11 +28,10 @@ def validate(
         selects the model is its author's choice.
 
     Raises:
-        ValueError: If `num_samples` is below `MIN_DRAWS` or the draws break the protocol contract.
+        ValueError: If the draws break the protocol contract, which also asks for at least two
+            draws per prefix.
     """
     # Prepare the validation data
-    if num_samples < MIN_DRAWS:
-        raise ValueError(f'Validation needs at least {MIN_DRAWS} draws per prefix')
     log = benchmark.validation
     cuts = log.cuts()
 
