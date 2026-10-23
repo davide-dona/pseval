@@ -1,5 +1,5 @@
 import json
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from functools import cached_property
 from itertools import pairwise
@@ -7,12 +7,13 @@ from pathlib import Path
 from typing import Self
 
 import numpy as np
+import pandas as pd
 import torch
 from declarray import Checker, Constraint, DeclareModel, mine
 
 from pseval.data import ACTIVITY_KEY, CASE_KEY, Log
+from pseval.metrics.columns import METRIC_KEYS, PrefixScores
 from pseval.metrics.prepared import PreparedPrefix
-from pseval.metrics.registry import METRICS
 from pseval.metrics.signature.kernel import SignatureKernel
 from pseval.records import Generation
 from pseval.vocabulary import UNK, ActivityCodes
@@ -145,28 +146,24 @@ class Scorer:
         if not np.isfinite(minutes).all() or (minutes < 0).any():
             raise ValueError(f'{key} has a negative or non-finite draw time')
 
-    def score(
-        self, generations: Sequence[Generation], *, metrics: Collection[str] | None = None
-    ) -> list[dict[str, float]]:
+    def score(self, generations: Sequence[Generation]) -> pd.DataFrame:
         """Score a batch of prefixes.
 
         Args:
             generations: Prefixes with their draws and observed suffixes, spelled by `codes`.
-            metrics: Registered metric keys to compute, every metric when None.
 
         Returns:
-            For each prefix in input order, the value of each requested metric.
+            One row per prefix in input order, one float64 column per `METRIC_KEYS` entry.
 
         Raises:
-            ValueError: If a metric is unknown.
+            ValueError: If a prefix has fewer than ten draws, which best-of-10 needs.
         """
-        entries = [METRICS[key] for key in (METRICS.entries if metrics is None else metrics)]
-        return [
-            {metric.key: metric.compute(context) for metric in entries}
-            for context in PreparedPrefix.of_batch(
-                generations, checker=self.checker, kernel=self.kernel
-            )
-        ]
+        prepared = PreparedPrefix.of_batch(generations, checker=self.checker, kernel=self.kernel)
+        return pd.DataFrame(
+            [PrefixScores.of(prefix) for prefix in prepared],
+            columns=list(METRIC_KEYS),
+            dtype=np.float64,
+        )
 
 
 def _fit_kernel(train: Log, *, device: torch.device | str) -> SignatureKernel:

@@ -1,5 +1,3 @@
-import json
-from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
@@ -9,21 +7,19 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from pseval.data import PrefixKey
-from pseval.metrics import METRICS
+from pseval.metrics import METRIC_KEYS
 from pseval.provenance import Provenance
 from pseval.scoring.summary import Summary, summarize
 
-# The scores file: one row per test prefix, every registered metric a column.
+# The scores file: one row per test prefix, every metric a column.
 SCHEMA = pa.schema(
     [
         ('case_id', pa.large_string()),
         ('prefix_len', pa.int64()),
         ('suffix_len', pa.int64()),
-        *((key, pa.float64()) for key in METRICS.entries),
+        *((key, pa.float64()) for key in METRIC_KEYS),
     ]
 )
-_METRIC_TABLE = b'metrics'
 # Rows buffered before a row group of the scores file is written.
 _ROW_GROUP = 16_384
 
@@ -44,13 +40,9 @@ class ScoresWriter:
         """
         if provenance.generations_sha256 is None:
             raise ValueError('A scores file must name the generations it scored')
-        schema = provenance.attach_to_schema(SCHEMA)
-        schema = schema.with_metadata(
-            schema.metadata | {_METRIC_TABLE: json.dumps(METRICS.table()).encode()}
-        )
         self._path = path
-        self._writer = pq.ParquetWriter(where=path, schema=schema)
-        self._columns = _empty_columns()
+        self._writer = pq.ParquetWriter(where=path, schema=provenance.attach_to_schema(SCHEMA))
+        self._buffered: list[pd.DataFrame] = []
 
     def __enter__(self) -> Self:
         return self
@@ -62,7 +54,7 @@ class ScoresWriter:
         traceback: TracebackType | None,
     ) -> None:
         try:
-            if exception_type is None and self._columns['case_id']:
+            if exception_type is None and self._buffered:
                 self._flush()
             self._writer.close()
         except BaseException:
@@ -71,41 +63,31 @@ class ScoresWriter:
         if exception_type is not None:
             self._path.unlink(missing_ok=True)
 
-    def write(self, rows: Sequence[tuple[PrefixKey, int, dict[str, float]]]) -> None:
-        """Append scored prefixes, each its key, true suffix length, and metric values.
+    def write(self, rows: pd.DataFrame) -> None:
+        """Append scored prefixes, one row each holding every `SCHEMA` column.
 
         A row group is written once at least `_ROW_GROUP` rows are buffered.
         """
-        columns = self._columns
-        for (case_id, prefix_len), suffix_len, values in rows:
-            columns['case_id'].append(case_id)
-            columns['prefix_len'].append(prefix_len)
-            columns['suffix_len'].append(suffix_len)
-            for key, value in values.items():
-                columns[key].append(value)
-        if len(columns['case_id']) >= _ROW_GROUP:
+        self._buffered.append(rows)
+        if sum(map(len, self._buffered)) >= _ROW_GROUP:
             self._flush()
 
     def _flush(self) -> None:
-        self._writer.write_table(pa.Table.from_pydict(self._columns, schema=SCHEMA))
-        self._columns = _empty_columns()
-
-
-def _empty_columns() -> dict[str, list]:
-    return {name: [] for name in SCHEMA.names}
+        rows = pd.concat(self._buffered, ignore_index=True)
+        self._writer.write_table(pa.Table.from_pandas(rows, schema=SCHEMA, preserve_index=False))
+        self._buffered = []
 
 
 @dataclass(frozen=True, eq=False)
 class Scores:
-    """A scores file: one row per test prefix, its provenance, and its metric table."""
+    """A scores file: one row per test prefix, and its provenance."""
 
     frame: pd.DataFrame
     provenance: Provenance
-    metrics: tuple[dict[str, object], ...]
 
     def summary(self) -> Summary:
         """Equal-weight means overall, by prefix length, and by true suffix length."""
-        return summarize(self.frame, [metric['key'] for metric in self.metrics])
+        return summarize(self.frame, list(METRIC_KEYS))
 
 
 def read_scores(path: Path) -> Scores:
@@ -120,6 +102,5 @@ def read_scores(path: Path) -> Scores:
         provenance = Provenance.from_parquet(parquet)
         if provenance.generations_sha256 is None:
             raise ValueError(f'{path} is a generations file, not a scores file')
-        metrics = tuple(json.loads(parquet.schema_arrow.metadata[_METRIC_TABLE]))
         frame = parquet.read().to_pandas()
-    return Scores(frame=frame, provenance=provenance, metrics=metrics)
+    return Scores(frame=frame, provenance=provenance)

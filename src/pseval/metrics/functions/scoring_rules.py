@@ -1,50 +1,29 @@
 import math
-from collections.abc import Callable, Sequence
 
 import numpy as np
 
-# Pairwise distance between sequences, a float64 matrix shaped [queries, choices].
-type Distance[T] = Callable[[Sequence[T], Sequence[T]], np.ndarray]
 
+def energy_score(draw_counts: np.ndarray, distances: np.ndarray) -> float:
+    """Return the fair energy score from distances between distinct draw values.
 
-def energy_score[T](
-    distinct_draw_values: Sequence[T],
-    truth: T,
-    *,
-    distance: Distance[T],
-    draw_counts: Sequence[float] | None = None,
-) -> float:
-    """Return the fair energy score using distances between distinct draw values.
-
-    Repeated draws can share one sequence. Their counts preserve draw multiplicity while
-    reducing the distance matrix from one row per draw to one row per distinct sequence.
+    Repeated draws share one distinct value. Their counts preserve draw multiplicity while the
+    distance matrix keeps one row per distinct value.
 
     Args:
-        distinct_draw_values: Sampled values, one entry per distinct value when folded.
-        truth: Observed value.
-        distance: Function returning a float64 matrix shaped [queries, choices].
-        draw_counts: Number of draws of each distinct value, in the same order. When
-            omitted, each entry represents one draw.
+        draw_counts: `[U]` draws of each distinct value.
+        distances: `[U, U + 1]` distances from each distinct value to every distinct value, then
+            to the observation.
 
     Returns:
-        Draw-weighted mean distance to truth minus the fair diversity correction over
-        pairs of different draws. Empty draws or nonpositive total draw count score 1.0; one
-        draw has no correction.
+        Draw-weighted mean distance to the observation minus the fair diversity correction over
+        pairs of different draws. No draws score 1.0; one draw has no correction.
     """
-    if not len(distinct_draw_values):
-        return 1.0
-    counts = (
-        np.ones(len(distinct_draw_values), dtype=np.float64)
-        if draw_counts is None
-        else np.asarray(draw_counts, dtype=np.float64)
-    )
-    draw_count = float(counts.sum())
+    draw_count = float(draw_counts.sum())
     if draw_count <= 0.0:
         return 1.0
-    pairs = distance(distinct_draw_values, (*distinct_draw_values, truth))
-    accuracy = float(counts @ pairs[:, -1]) / draw_count
+    accuracy = float(draw_counts @ distances[:, -1]) / draw_count
     if draw_count > 1:
-        pair_sum = float(counts @ pairs[:, :-1] @ counts)
+        pair_sum = float(draw_counts @ distances[:, :-1] @ draw_counts)
         return accuracy - pair_sum / (2.0 * draw_count * (draw_count - 1.0))
     return accuracy
 

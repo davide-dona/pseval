@@ -7,7 +7,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from pseval.hashing import canonical_json, validate_sha256
-from pseval.metrics import METRICS
+from pseval.metrics import METRIC_KEYS
 
 # The major version of pseval. Every file pseval writes carries it, and a file written under
 # another one is refused: a major version changes the reported numbers.
@@ -20,8 +20,8 @@ _PARQUET_KEY = b'pseval'
 class Selection:
     """How the generating model was selected, stored with its generations and scores.
 
-    `metric` is the validation metric the selection minimized or maximized, a registered metric
-    key, or None for a model without a selection step. `procedure` says in words how the
+    `metric` is the validation metric the selection minimized or maximized, a scores column,
+    or None for a model without a selection step. `procedure` says in words how the
     selection ran, for instance which validation prefixes, draws, and checkpoints it compared.
     """
 
@@ -29,8 +29,8 @@ class Selection:
     procedure: str
 
     def __post_init__(self) -> None:
-        if self.metric is not None and self.metric not in METRICS.entries:
-            raise ValueError(f'Selection metric {self.metric!r} is not a registered metric')
+        if self.metric is not None and self.metric not in METRIC_KEYS:
+            raise ValueError(f'Selection metric {self.metric!r} is not a scores column')
         if not isinstance(self.procedure, str) or not self.procedure.strip():
             raise ValueError('A selection procedure must be described')
 

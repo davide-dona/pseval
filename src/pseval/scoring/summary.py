@@ -19,7 +19,7 @@ class Summary:
     by_suffix_length: pd.DataFrame
 
 
-def _means(values: pd.DataFrame) -> pd.Series:
+def means(values: pd.DataFrame) -> pd.Series:
     """Column means summed in row order."""
     totals = np.add.accumulate(values.to_numpy(np.float64), axis=0)[-1]
     return pd.Series(totals / len(values), index=values.columns)
@@ -27,7 +27,7 @@ def _means(values: pd.DataFrame) -> pd.Series:
 
 def _bucket_means(frame: pd.DataFrame, column: str, keys: list[str]) -> pd.DataFrame:
     rows = {
-        length: pd.concat([pd.Series({'prefixes': len(group)}), _means(group[keys])])
+        length: pd.concat([pd.Series({'prefixes': len(group)}), means(group[keys])])
         for length, group in frame.groupby(column, sort=True)
     }
     buckets = pd.DataFrame.from_dict(rows, orient='index')
@@ -45,7 +45,7 @@ def summarize(frame: pd.DataFrame, keys: list[str]) -> Summary:
     """
     return Summary(
         prefixes=len(frame),
-        overall=_means(frame[keys]),
+        overall=means(frame[keys]),
         by_prefix_length=_bucket_means(frame, 'prefix_len', keys),
         by_suffix_length=_bucket_means(frame, 'suffix_len', keys),
     )

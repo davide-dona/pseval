@@ -1,10 +1,10 @@
 from pseval.benchmark.bundle import Benchmark
-from pseval.metrics import METRICS, Direction
+from pseval.metrics import PROPER_SCORES
 from pseval.scoring.store import Scores, read_scores
 
 
 def skill(scores: Scores, benchmark: Benchmark) -> dict[str, float]:
-    """Return the skill of every ranked metric to minimize against the unconditional reference.
+    """Return the skill of every proper score against the unconditional reference.
 
     The skill is `1 - mean / reference mean`: zero for the reference, one for a perfect score,
     negative when worse than the reference. Ranking by skill equals ranking by the mean.
@@ -14,7 +14,7 @@ def skill(scores: Scores, benchmark: Benchmark) -> dict[str, float]:
         benchmark: The benchmark holding the reference scores.
 
     Returns:
-        The skill per metric key, in registry order.
+        The skill per proper score, in `PROPER_SCORES` order.
 
     Raises:
         ValueError: If the scores belong to another benchmark or cover other prefixes.
@@ -33,7 +33,5 @@ def skill(scores: Scores, benchmark: Benchmark) -> dict[str, float]:
     model_means = scores.summary().overall
     reference_means = reference.summary().overall
     return {
-        key: 1.0 - float(model_means[key]) / float(reference_means[key])
-        for key, metric in METRICS.ranked.items()
-        if metric.direction is Direction.LOWER
+        key: 1.0 - float(model_means[key]) / float(reference_means[key]) for key in PROPER_SCORES
     }

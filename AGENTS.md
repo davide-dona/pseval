@@ -27,8 +27,8 @@ logging, selection, figures, tables, and significance tests.
 | `src/pseval/generation/generate.py` | `generate` over the test split. |
 | `src/pseval/generation/join.py` | `join_draws`: a model's draws joined with their prefixes and observed suffixes. |
 | `src/pseval/generation/store.py` | The generations file. |
-| `src/pseval/metrics/registry.py` | `Metric`, its enums, and the `METRICS` registry. |
-| `src/pseval/metrics/definitions/` | The registered metrics, one module per `MetricGroup`, imported in column order. |
+| `src/pseval/metrics/columns.py` | `PrefixScores`, every scores column in order, `METRIC_KEYS`, and `PROPER_SCORES`. |
+| `src/pseval/metrics/definitions/` | One function per metric group, computing its columns of one prefix. |
 | `src/pseval/metrics/functions/` | Pure functions the metrics are computed with: sequence distances and scoring rules. |
 | `src/pseval/metrics/signature/` | The signature kernel: embedding and Gram matrices, bandwidth fit, CPU and CUDA solvers. |
 | `src/pseval/metrics/prepared.py` | `PreparedPrefix`, the per-prefix inputs every metric shares. |

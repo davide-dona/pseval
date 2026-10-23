@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import torch
 from tqdm import tqdm
 
@@ -71,21 +72,26 @@ def _init_worker(generations: Path, directory: Path, device: torch.device, proce
     )
 
 
-def _score_block(block: int) -> list[tuple[int, dict[str, float]]]:
-    """Validate and score one row group: each prefix's true suffix length and metric values."""
+def _score_block(block: int) -> pd.DataFrame:
+    """Validate and score one row group, one scores row per prefix."""
     generations = _worker.generations.block(block)
     scorer = _worker.scorer
     for generation in generations:
         _require_observed(generation, _worker.test, scorer.codes)
         scorer.require_draws(generation, num_samples=NUM_SAMPLES)
-    values = scorer.score(generations)
-    lengths = [len(generation.truth) for generation in generations]
-    return list(zip(lengths, values, strict=True))
+    keys = pd.DataFrame(
+        {
+            'case_id': [generation.case_id for generation in generations],
+            'prefix_len': [generation.prefix_len for generation in generations],
+            'suffix_len': [len(generation.truth) for generation in generations],
+        }
+    )
+    return pd.concat([keys, scorer.score(generations)], axis=1)
 
 
 def _scored_blocks(
     generations: Path, benchmark: Benchmark, *, device: torch.device, blocks: int, processes: int
-) -> Iterator[list[tuple[int, dict[str, float]]]]:
+) -> Iterator[pd.DataFrame]:
     """Score every row group across spawned processes, yielding them in file order.
 
     Spawned rather than forked, so each process can open its own CUDA context on `device`.
@@ -112,7 +118,7 @@ def score(
     The file must answer every test prefix exactly once with the protocol's draw count, hold the
     benchmark's own prefixes and observed suffixes, and come from this benchmark and protocol
     version. Each row group is scored in a worker process; the scores file holds one row per
-    prefix in file order, with every ranked metric and every diagnostic.
+    prefix in file order, with every metric.
 
     Args:
         generations: The generations file, from `pseval.generate` or written to its format.
@@ -142,7 +148,6 @@ def score(
     if len(set(keys)) != len(keys) or set(keys) != set(benchmark._test().cuts()):
         raise ValueError('The generations must answer every test prefix exactly once')
     processes = workers if workers is not None else os.cpu_count() or 1
-    rows = iter(keys)
     with (
         ScoresWriter(path, provenance.scored(sha256(generations))) as writer,
         tqdm(total=prefixes, desc='Scoring', unit='prefix') as progress,
@@ -150,6 +155,6 @@ def score(
         for block in _scored_blocks(
             generations, benchmark, device=device, blocks=blocks, processes=processes
         ):
-            writer.write([(next(rows), suffix_len, values) for suffix_len, values in block])
+            writer.write(block)
             progress.update(len(block))
     return path

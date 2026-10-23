@@ -1,10 +1,11 @@
 import numpy as np
+import pandas as pd
 import torch
 
 from pseval.benchmark.bundle import Benchmark
 from pseval.generation.join import join_draws
-from pseval.metrics import METRICS
 from pseval.protocol import SEED, SuffixModel, batch_seed
+from pseval.scoring.summary import means
 
 
 def validate(
@@ -19,10 +20,6 @@ def validate(
 ) -> dict[str, float]:
     """Score a model on a fixed, seeded subset of validation prefixes.
 
-    The subset depends on `prefixes` and `seed` alone, so every call of a run reads the same
-    prefixes and two calls differ because the model changed. Sampling uses seeds derived from
-    `seed`, so a deterministic model gives the same values on every call.
-
     Args:
         model: The model to score, its `sample` called on validation prefixes only.
         benchmark: The benchmark whose validation split to read.
@@ -33,14 +30,13 @@ def validate(
         device: Where the signature kernel is solved.
 
     Returns:
-        Every registered metric's equal-weight mean over the subset, summed in subset order,
-        in registry order. Which one selects the model is its author's choice.
+        Every metric's equal-weight mean over the subset, summed in subset order, in
+        `METRIC_KEYS` order. Which one selects the model is its author's choice.
 
     Raises:
         ValueError: If the draws break the protocol contract, or `num_samples` is below the draws
             a metric needs, such as the ten of best-of-10.
     """
-    keys = list(METRICS.entries)
     log = benchmark.validation
     cuts = log.cuts()
     rng = np.random.default_rng(seed)
@@ -49,12 +45,13 @@ def validate(
     if not subset:
         raise ValueError('The validation split has no prefix')
     scorer = benchmark.scorer(device)
-    values = []
+    scores = []
+    # Score the prefixes in batches, to avoid memory blowup on large logs
     for batch, start in enumerate(range(0, len(subset), batch_size)):
         batch_keys = subset[start : start + batch_size]
+        # Draw the suffixes from the model, then score them
         draws = model.sample(log.prefixes(batch_keys), num_samples, seed=batch_seed(seed, batch))
-        values += scorer.score(
-            join_draws(log, batch_keys, draws, scorer=scorer, num_samples=num_samples)
+        scores.append(
+            scorer.score(join_draws(log, batch_keys, draws, scorer=scorer, num_samples=num_samples))
         )
-    totals = np.add.accumulate(np.array([[row[key] for key in keys] for row in values]), axis=0)
-    return dict(zip(keys, (totals[-1] / len(values)).tolist(), strict=True))
+    return means(pd.concat(scores, ignore_index=True)).to_dict()
