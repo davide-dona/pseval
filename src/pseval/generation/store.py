@@ -27,7 +27,6 @@ SCHEMA = pa.schema(
     [
         ('case_id', pa.large_string()),
         ('prefix_len', pa.int64()),
-        ('generated_suffixes', pa.list_(pa.field(name='element', type=_ACTIVITIES))),
         (
             'generated_draws',
             pa.list_(
@@ -35,7 +34,7 @@ SCHEMA = pa.schema(
                     name='element',
                     type=pa.struct(
                         [
-                            ('suffix_index', pa.int32()),
+                            ('activities', _ACTIVITIES),
                             ('inter_event_time_minutes', _MINUTES),
                             ('truncated', pa.bool_()),
                         ]
@@ -56,15 +55,14 @@ def _row(generation: Generation) -> dict:
     return {
         'case_id': generation.case_id,
         'prefix_len': generation.prefix_len,
-        'generated_suffixes': list(samples.suffixes),
         'generated_draws': [
             {
-                'suffix_index': int(index),
+                'activities': activities,
                 'inter_event_time_minutes': times[start:stop].tolist(),
                 'truncated': bool(truncated),
             }
-            for index, start, stop, truncated in zip(
-                samples.taken,
+            for activities, start, stop, truncated in zip(
+                samples.suffixes,
                 samples.offsets[:-1],
                 samples.offsets[1:],
                 samples.truncated,
@@ -80,12 +78,9 @@ def _draws_from_table(table: pa.Table) -> list[tuple[PrefixKey, Draws]]:
     Raises:
         ValueError: If a draw's times do not match its activities.
     """
-    suffixes = table.column('generated_suffixes').combine_chunks()
-    suffix_offsets = suffixes.offsets.to_numpy()
-    suffix_values = suffixes.values.to_pylist()
     draws = table.column('generated_draws').combine_chunks()
     draw_offsets = draws.offsets.to_numpy()
-    taken = pc.struct_field(draws.values, 'suffix_index').to_numpy()
+    suffixes = pc.struct_field(draws.values, 'activities').to_pylist()
     truncated = pc.struct_field(draws.values, 'truncated').to_numpy(zero_copy_only=False)
     lists = pc.struct_field(draws.values, 'inter_event_time_minutes')
     times, time_offsets = lists.values.to_numpy().astype(np.float64), lists.offsets.to_numpy()
@@ -101,8 +96,7 @@ def _draws_from_table(table: pa.Table) -> list[tuple[PrefixKey, Draws]]:
         first, last = draw_offsets[row], draw_offsets[row + 1]
         row_time_offsets = time_offsets[first : last + 1]
         samples = Draws(
-            suffixes=tuple(suffix_values[suffix_offsets[row] : suffix_offsets[row + 1]]),
-            taken=taken[first:last],
+            suffixes=tuple(suffixes[first:last]),
             inter_event_time_minutes=times[row_time_offsets[0] : row_time_offsets[-1]],
             truncated=truncated[first:last],
         )

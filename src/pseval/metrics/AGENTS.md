@@ -2,8 +2,7 @@
 
 Metrics score each forecast of a given prefix, represented by its draws, against the single
 observed suffix. `Scorer` scores batches of `Generation` records in memory; file handling
-belongs to `generation` and `scoring`. In shape comments, `K` counts a prefix's draws and `U` its
-distinct activity suffixes.
+belongs to `generation` and `scoring`. In shape comments, `K` counts a prefix's draws.
 
 ## Layout
 
@@ -30,8 +29,6 @@ distinct activity suffixes.
   column is a diagnostic and never ranks.
 - `PreparedPrefix.of_batch` makes one Declare checker call and one signature kernel call per
   batch, since both have a fixed cost per call. Score batches, not single prefixes.
-- Preserve draw multiplicity: pairwise terms run over pairs of different draws, including repeats
-  of one distinct suffix.
 - Compute CRPS and its spread from gaps between sorted draws with nonnegative weights. Never as
   accuracy minus spread, which cancels catastrophically under extreme draws.
 - Inter-event times have no metric of their own, since aligning draws by position to the observed

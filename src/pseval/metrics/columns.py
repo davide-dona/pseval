@@ -21,7 +21,7 @@ class PrefixScores:
     # signature kernel.
     signature_kernel_score: float
 
-    # Draw-weighted DLS of the activity suffixes to the observed one.
+    # Mean DLS of the sampled activity suffixes to the observed one.
     dls_sample_mean: float
     # Mean DLD over ordered pairs of different draws.
     activity_dld_spread: float
@@ -60,7 +60,7 @@ class PrefixScores:
     # Randomized PIT of the observed remaining time among the draws.
     remaining_time_truth_quantile: float
 
-    # Draw-weighted rate of full traces satisfying every Declare constraint, and 1.0 when the
+    # Rate of sampled full traces satisfying every Declare constraint, and 1.0 when the
     # observed one does.
     full_conformance_sample_rate: float
     full_conformance_observed: float

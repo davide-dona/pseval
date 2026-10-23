@@ -17,10 +17,9 @@ PIT_SEED = 42
 class PreparedPrefix:
     """Decoded values and constraint checks shared by every metric for one prefix.
 
-    Sample full conformance has shape [U], one entry per distinct suffix in suffix order;
-    generation sample counts give their draw multiplicities. Full conformance is 1.0 when the
-    full trace satisfies every constraint. Suffix lengths and remaining times have shape [K], one
-    entry per draw, and are compared with the scalar truth. Times are in minutes. The signature
+    Sample full conformance, suffix lengths, and remaining times have shape [K], one entry per
+    draw, and are compared with the observed suffix's. Full conformance is 1.0 when the full
+    trace satisfies every constraint. Times are in minutes. The signature
     Gram matrix has shape [K + 1, K + 1]: the normalized signature kernel between every pair of
     draws, with the observed suffix last. The PIT noise is one uniform on [0, 1] drawn from the
     prefix key alone, so it does not depend on the worker or batch scoring the prefix.
@@ -57,7 +56,7 @@ class PreparedPrefix:
         """
         if not generations:
             return []
-        # Each prefix contributes its distinct sampled traces followed by its observed one.
+        # Each prefix contributes its sampled traces followed by its observed one.
         full = checker.check(
             [
                 generation.prefix_activities + suffix
@@ -69,7 +68,7 @@ class PreparedPrefix:
         prepared = []
         start = 0
         for generation, gram in zip(generations, grams, strict=True):
-            stop = start + len(generation.samples.suffixes) + 1
+            stop = start + len(generation.samples) + 1
             prepared.append(cls._of(generation, full=full[start:stop], gram=gram))
             start = stop
         return prepared
@@ -116,12 +115,12 @@ def _suffix_paths(
             [
                 *(
                     kernel.embed(
-                        samples.suffixes[taken],
+                        suffix,
                         times[offsets[draw] : offsets[draw + 1]],
                         offset=offset,
                         alphabet=alphabet,
                     )
-                    for draw, taken in enumerate(samples.taken)
+                    for draw, suffix in enumerate(samples.suffixes)
                 ),
                 kernel.embed(
                     truth.activities,

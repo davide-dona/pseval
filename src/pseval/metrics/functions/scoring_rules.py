@@ -3,39 +3,30 @@ import math
 import numpy as np
 
 
-def energy_score(draw_counts: np.ndarray, distances: np.ndarray) -> float:
-    """Return the fair energy score from distances between distinct draw values.
-
-    Repeated draws share one distinct value. Their counts preserve draw multiplicity while the
-    distance matrix keeps one row per distinct value.
+def energy_score(distances: np.ndarray) -> float:
+    """Return the fair energy score from distances between draws.
 
     Args:
-        draw_counts: `[U]` draws of each distinct value, summing to at least two.
-        distances: `[U, U + 1]` distances from each distinct value to every distinct value, then
-            to the observation.
+        distances: `[K, K + 1]` distances from each of at least two draws to every draw, then to
+            the observation.
 
     Returns:
-        Draw-weighted mean distance to the observation minus the fair diversity correction over
-        pairs of different draws.
+        Mean distance to the observation minus half the mean distance over pairs of different
+        draws.
     """
-    draw_count = float(draw_counts.sum())
-    accuracy = float(draw_counts @ distances[:, -1]) / draw_count
-    pair_sum = float(draw_counts @ distances[:, :-1] @ draw_counts)
-    return accuracy - pair_sum / (2.0 * draw_count * (draw_count - 1.0))
+    return float(distances[:, -1].mean()) - 0.5 * mean_between_draws(distances[:, :-1])
 
 
-def mean_between_draws(draw_counts: np.ndarray, distances: np.ndarray) -> float:
+def mean_between_draws(distances: np.ndarray) -> float:
     """Return the mean distance over ordered pairs of different draws.
 
-    Two draws of the same distinct value sit on the zero diagonal, so they add nothing to the
-    sum while the pair count still includes them.
+    The diagonal is zero, so summing the whole matrix sums the pairs of different draws.
 
     Args:
-        draw_counts: `[U]` draws of each distinct value, summing to at least two.
-        distances: `[U, U]` distances between the distinct values.
+        distances: `[K, K]` distances between at least two draws.
     """
-    draw_count = float(draw_counts.sum())
-    return float(draw_counts @ distances @ draw_counts) / (draw_count * (draw_count - 1.0))
+    draws = len(distances)
+    return float(distances.sum()) / (draws * (draws - 1.0))
 
 
 def best_of_k(similarities: np.ndarray, k: int) -> float:
