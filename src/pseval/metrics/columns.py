@@ -73,11 +73,7 @@ class PrefixScores:
 
     @classmethod
     def of(cls, prefix: PreparedPrefix) -> Self:
-        """Score one prefix.
-
-        Raises:
-            ValueError: With fewer than ten draws, which best-of-10 needs.
-        """
+        """Score one prefix."""
         return cls(
             **joint(prefix),
             **activity(prefix),

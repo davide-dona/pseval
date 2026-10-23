@@ -13,11 +13,7 @@ class Unconditional(SuffixModel):
     """
 
     def __init__(self, train: Log) -> None:
-        """Collect the suffix of every train cut.
-
-        Raises:
-            ValueError: If the train split has no cut.
-        """
+        """Collect the suffix of every train cut."""
         self._activities = train.events[ACTIVITY_KEY].astype(str).to_numpy(dtype=object)
         self._minutes = train.inter_event_minutes()
         offsets = train.case_offsets
@@ -28,8 +24,6 @@ class Unconditional(SuffixModel):
         # starts at any event but its case's first and runs to the case's end.
         self._starts = np.flatnonzero(~first)
         self._stops = offsets[1:][case_of_event[~first]]
-        if not len(self._starts):
-            raise ValueError('The unconditional model needs at least one train cut')
 
     def sample(self, prefixes: PrefixBatch, num_samples: int, *, seed: int) -> list[SuffixDraws]:
         """Draw `num_samples` train suffixes per prefix, independently and with replacement."""

@@ -99,13 +99,7 @@ class Benchmark:
         return self._scorer.on(device)
 
     def _reference_scores(self) -> Path:
-        """The scores of the unconditional reference.
-
-        Raises:
-            ValueError: If the bundle has no reference.
-        """
-        if self._manifest.reference is None:
-            raise ValueError(f'The {self.dataset} bundle holds no unconditional reference')
+        """The scores of the unconditional reference."""
         return self._directory / REFERENCE_FILES['scores']
 
 

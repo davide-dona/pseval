@@ -6,6 +6,7 @@ from tqdm import tqdm
 from pseval.benchmark.bundle import Benchmark
 from pseval.generation.join import join_draws
 from pseval.generation.store import GenerationWriter
+from pseval.metrics import MIN_DRAWS
 from pseval.protocol import SuffixModel, batch_seed
 from pseval.provenance import Provenance, Selection
 
@@ -49,8 +50,8 @@ def generate(
         ValueError: If `num_samples` is below ten or the draws break the protocol contract. The
             file is removed.
     """
-    if batch_size < 1:
-        raise ValueError('The batch size must be positive')
+    if num_samples < MIN_DRAWS:
+        raise ValueError(f'Generation needs at least {MIN_DRAWS} draws per prefix')
     test = benchmark._test()
     keys = sorted(test.cuts(), key=lambda key: key[1])
     provenance = Provenance(

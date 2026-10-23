@@ -14,10 +14,6 @@ class DecodedEvents:
     # [L] float64 minutes before each activity, from the previous event.
     inter_event_time_minutes: np.ndarray
 
-    def __post_init__(self) -> None:
-        if self.inter_event_time_minutes.shape != (len(self.activities),):
-            raise ValueError('Inter-event times do not match their activities')
-
     def __len__(self) -> int:
         return len(self.activities)
 
@@ -44,19 +40,6 @@ class Draws:
     inter_event_time_minutes: np.ndarray
     # [S] Whether each draw was closed at the length cap without ending.
     truncated: np.ndarray
-
-    def __post_init__(self) -> None:
-        draws = len(self.taken)
-        if self.taken.ndim != 1 or self.truncated.shape != (draws,):
-            raise ValueError('Generation draws disagree on how many draws were taken')
-        if len(set(self.suffixes)) != len(self.suffixes):
-            raise ValueError('Generation suffixes must be distinct')
-        if draws and (self.taken.min() < 0 or self.taken.max() >= len(self.suffixes)):
-            raise ValueError('Generation draw references an unknown suffix')
-        if len(np.unique(self.taken)) != len(self.suffixes):
-            raise ValueError('Every generation suffix must be taken by a draw')
-        if self.inter_event_time_minutes.shape != (int(self.offsets[-1]),):
-            raise ValueError('Generation draw times do not match their suffix lengths')
 
     @classmethod
     def of(cls, drawn: Sequence[DecodedEvents], *, truncated: Sequence[bool]) -> 'Draws':
@@ -116,14 +99,8 @@ class Generation:
 
     case_id: str
     prefix_activities: str
-    # [P] float64 minutes before each prefix event, zero before the case's first event.
-    prefix_inter_event_time_minutes: np.ndarray
     samples: Draws
     truth: DecodedEvents
-
-    def __post_init__(self) -> None:
-        if self.prefix_inter_event_time_minutes.shape != (len(self.prefix_activities),):
-            raise ValueError('Generation prefix times do not match its activities')
 
     @property
     def prefix_len(self) -> int:

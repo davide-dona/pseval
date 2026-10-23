@@ -39,8 +39,6 @@ def validate(
         raise ValueError(f'Validation needs at least {MIN_DRAWS} draws per prefix')
     log = benchmark.validation
     cuts = log.cuts()
-    if not cuts:
-        raise ValueError('The validation split has no prefix')
 
     scorer = benchmark.scorer(device)
     scores = []

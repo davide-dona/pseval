@@ -11,11 +11,7 @@ from pseval.metrics.prepared import PreparedPrefix
 
 
 def activity(prefix: PreparedPrefix) -> dict[str, float]:
-    """The activity columns of one prefix.
-
-    Raises:
-        ValueError: With fewer than ten draws, which best-of-10 needs.
-    """
+    """The activity columns of one prefix."""
     samples, truth = prefix.generation.samples, prefix.generation.truth
     choices = (*samples.suffixes, truth.activities)
     similarities = np.array(

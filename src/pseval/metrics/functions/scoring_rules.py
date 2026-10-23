@@ -51,14 +51,9 @@ def best_of_k(similarities: np.ndarray, k: int) -> float:
 
     Args:
         similarities: `[K]` one similarity per draw, repeated draws retained.
-        k: Subset size.
-
-    Raises:
-        ValueError: If fewer than k draws are given.
+        k: Subset size, at most K.
     """
     draw_count = len(similarities)
-    if draw_count < k:
-        raise ValueError(f'best-of-{k} needs at least {k} draws, got {draw_count}.')
     ordered = np.sort(similarities)  # [K]
     subsets = math.comb(draw_count, k)
     weights = [math.comb(rank, k - 1) / subsets for rank in range(draw_count)]  # [K]

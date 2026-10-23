@@ -91,18 +91,8 @@ class Scorer:
 
     @classmethod
     def load(cls, *, protocol: Path, declare: Path) -> Self:
-        """Read a fitted protocol written by `save`, its kernel solving on the CPU.
-
-        Raises:
-            ValueError: If the protocol file is malformed.
-        """
+        """Read a fitted protocol written by `save`, its kernel solving on the CPU."""
         payload = json.loads(protocol.read_bytes())
-        if not isinstance(payload, dict) or set(payload) != {
-            'vocabulary',
-            'max_suffix_length',
-            'signature_kernel',
-        }:
-            raise ValueError(f'{protocol} is not a valid protocol file')
         return cls(
             codes=ActivityCodes(payload['vocabulary']),
             max_suffix_length=int(payload['max_suffix_length']),
@@ -112,11 +102,7 @@ class Scorer:
 
     @cached_property
     def checker(self) -> Checker:
-        """A Declare checker of traces spelled by `codes`.
-
-        Raises:
-            ValueError: If the Declare model names an activity outside the vocabulary.
-        """
+        """A Declare checker of traces spelled by `codes`."""
         return _code_checker(self.declare, self.codes.codes)
 
     def on(self, device: torch.device | str) -> Self:
@@ -154,9 +140,6 @@ class Scorer:
 
         Returns:
             One row per prefix in input order, one float64 column per `METRIC_KEYS` entry.
-
-        Raises:
-            ValueError: If a prefix has fewer than ten draws, which best-of-10 needs.
         """
         prepared = PreparedPrefix.of_batch(generations, checker=self.checker, kernel=self.kernel)
         return pd.DataFrame(
@@ -184,22 +167,13 @@ def _code_checker(model: DeclareModel, codes: Mapping[str, str]) -> Checker:
     """A checker of traces spelled one character per activity.
 
     A trace without a constraint's activation satisfies it.
-
-    Raises:
-        ValueError: If `codes` lacks an activity the model names, which means the two belong to
-            different benchmarks.
     """
-    try:
-        constraints = {
-            Constraint(
-                constraint.template,
-                tuple(codes[name] for name in constraint.activities),
-                constraint.n,
-            ): measures
-            for constraint, measures in model.constraints.items()
-        }
-    except KeyError as error:
-        raise ValueError(
-            f'The vocabulary lacks the activity {error.args[0]!r} of the Declare model.'
-        ) from error
+    constraints = {
+        Constraint(
+            constraint.template,
+            tuple(codes[name] for name in constraint.activities),
+            constraint.n,
+        ): measures
+        for constraint, measures in model.constraints.items()
+    }
     return Checker(DeclareModel(settings=model.settings, constraints=constraints))

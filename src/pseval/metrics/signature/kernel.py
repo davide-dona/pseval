@@ -27,12 +27,6 @@ class SignatureKernel:
     bandwidth: float
     device: torch.device = field(default=torch.device('cpu'), compare=False)
 
-    def __post_init__(self) -> None:
-        if not (np.isfinite(self.time_scale) and self.time_scale > 0):
-            raise ValueError('Signature kernel time scale must be positive and finite')
-        if not (np.isfinite(self.bandwidth) and self.bandwidth > 0):
-            raise ValueError('Signature kernel bandwidth must be positive and finite')
-
     @classmethod
     def fit(
         cls,
@@ -54,21 +48,13 @@ class SignatureKernel:
 
         Returns:
             The fitted kernel, solving on `device` when it is CUDA and on the CPU otherwise.
-
-        Raises:
-            ValueError: If the suffixes hold no time or fewer than two distinct points.
         """
         minutes = np.concatenate([np.zeros(0), *(times for _, times in traces)])
-        mean_log = float(np.log1p(minutes).mean()) if minutes.size else 0.0
-        if mean_log <= 0:
-            raise ValueError('Training suffixes hold no positive inter-event time')
-        time_scale = 1.0 / mean_log
+        time_scale = 1.0 / float(np.log1p(minutes).mean())
         points = np.concatenate(
             [embed(axes, times, time_scale=time_scale, alphabet=alphabet) for axes, times in traces]
         )
         unique, counts = np.unique(points, axis=0, return_counts=True)
-        if len(unique) < 2:
-            raise ValueError('Training suffixes hold fewer than two distinct path points')
         squared = weighted_median_squared_distance(
             torch.from_numpy(unique).to(_solver_device(device)),
             torch.from_numpy(counts.astype(np.float64)).to(_solver_device(device)),
@@ -80,14 +66,8 @@ class SignatureKernel:
         )
 
     @classmethod
-    def from_dict(cls, value: object, *, device: torch.device | str) -> Self:
-        """Read a stored calibration and place the kernel on a device.
-
-        Raises:
-            ValueError: If the value is not a well-formed calibration.
-        """
-        if not isinstance(value, dict) or set(value) != {'time_scale', 'bandwidth'}:
-            raise ValueError('Invalid signature kernel calibration')
+    def from_dict(cls, value: dict[str, float], *, device: torch.device | str) -> Self:
+        """Read a stored calibration and place the kernel on a device."""
         return cls(
             time_scale=float(value['time_scale']),
             bandwidth=float(value['bandwidth']),

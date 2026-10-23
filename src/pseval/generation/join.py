@@ -5,6 +5,24 @@ import numpy as np
 from pseval.data import Log, PrefixKey, SuffixDraws
 from pseval.generation.records import DecodedEvents, Draws, Generation
 from pseval.metrics.scorer import Scorer
+from pseval.metrics.vocabulary import ActivityCodes
+
+
+def observe(log: Log, key: PrefixKey, samples: Draws, *, codes: ActivityCodes) -> Generation:
+    """Join one prefix's draws with its prefix and observed suffix from the split.
+
+    Observed activities unseen in train are spelled as `UNK`.
+    """
+    truth_activities, truth_minutes = log.suffix_trace(key)
+    return Generation(
+        case_id=key[0],
+        prefix_activities=codes.spell(log.prefix_activities(key), unseen_as_unk=True),
+        samples=samples,
+        truth=DecodedEvents(
+            activities=codes.spell(truth_activities, unseen_as_unk=True),
+            inter_event_time_minutes=truth_minutes,
+        ),
+    )
 
 
 def join_draws(
@@ -25,7 +43,7 @@ def join_draws(
         num_samples: How many draws each prefix was asked for.
 
     Returns:
-        One generation per key. Observed activities unseen in train are spelled as `UNK`.
+        One generation per key.
 
     Raises:
         ValueError: If the draws break the protocol contract.
@@ -43,27 +61,17 @@ def join_draws(
             raise ValueError(
                 f'{key} has a draw outside the vocabulary: {error.args[0]!r}'
             ) from error
-        prefix_activities, prefix_minutes = log.prefix_trace(key)
-        truth_activities, truth_minutes = log.suffix_trace(key)
-        generation = Generation(
-            case_id=key[0],
-            prefix_activities=codes.spell(prefix_activities, unseen_as_unk=True),
-            prefix_inter_event_time_minutes=prefix_minutes,
-            samples=Draws.of(
-                [
-                    DecodedEvents(
-                        activities=activities,
-                        inter_event_time_minutes=np.asarray(minutes, dtype=np.float64),
-                    )
-                    for activities, minutes in zip(spelled, sample.minutes, strict=True)
-                ],
-                truncated=sample.truncated,
-            ),
-            truth=DecodedEvents(
-                activities=codes.spell(truth_activities, unseen_as_unk=True),
-                inter_event_time_minutes=truth_minutes,
-            ),
+        samples = Draws.of(
+            [
+                DecodedEvents(
+                    activities=activities,
+                    inter_event_time_minutes=np.asarray(minutes, dtype=np.float64),
+                )
+                for activities, minutes in zip(spelled, sample.minutes, strict=True)
+            ],
+            truncated=sample.truncated,
         )
+        generation = observe(log, key, samples, codes=codes)
         scorer.require_draws(generation, num_samples=num_samples)
         result.append(generation)
     return result

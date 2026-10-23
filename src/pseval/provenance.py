@@ -1,6 +1,5 @@
 import hashlib
 import json
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -9,14 +8,13 @@ from typing import Self
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from pseval.metrics import METRIC_KEYS, MIN_DRAWS
+from pseval.metrics import METRIC_KEYS
 
 # The major version of pseval. Every file pseval writes carries it, and a file written under
 # another one is refused: a major version changes the reported numbers.
 PROTOCOL_VERSION = 1
 
 _PARQUET_KEY = b'pseval'
-_SHA256 = re.compile(r'[0-9a-f]{64}')
 
 
 def sha256(path: Path) -> str:
@@ -28,17 +26,6 @@ def sha256(path: Path) -> str:
 def canonical_json(value: object) -> bytes:
     """Encode a JSON value with sorted keys and no whitespace, the form fingerprints hash."""
     return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()
-
-
-def validate_sha256(value: object, field_name: str) -> str:
-    """Require a lowercase hexadecimal SHA-256 digest.
-
-    Raises:
-        ValueError: If `value` is not one.
-    """
-    if not isinstance(value, str) or _SHA256.fullmatch(value) is None:
-        raise ValueError(f'Invalid {field_name}: {value!r}')
-    return value
 
 
 @dataclass(frozen=True)
@@ -56,8 +43,6 @@ class Selection:
     def __post_init__(self) -> None:
         if self.metric is not None and self.metric not in METRIC_KEYS:
             raise ValueError(f'Selection metric {self.metric!r} is not a scores column')
-        if not isinstance(self.procedure, str) or not self.procedure.strip():
-            raise ValueError('A selection procedure must be described')
 
     @classmethod
     def none(cls) -> Self:
@@ -68,10 +53,8 @@ class Selection:
         return {'metric': self.metric, 'procedure': self.procedure}
 
     @classmethod
-    def from_dict(cls, value: object) -> Self:
-        if not isinstance(value, dict) or set(value) != {'metric', 'procedure'}:
-            raise ValueError('Invalid selection record')
-        return cls(metric=value['metric'], procedure=value['procedure'])
+    def from_dict(cls, value: dict[str, str | None]) -> Self:
+        return cls(**value)
 
 
 @dataclass(frozen=True)
@@ -96,21 +79,6 @@ class Provenance:
     protocol_version: int = PROTOCOL_VERSION
 
     def __post_init__(self) -> None:
-        validate_sha256(self.fingerprint, 'benchmark fingerprint')
-        if not isinstance(self.label, str) or not self.label.strip():
-            raise ValueError('A model label must be a nonempty string')
-        if not _is_int(self.num_samples) or self.num_samples < MIN_DRAWS:
-            raise ValueError(f'The draw count must be an integer of at least {MIN_DRAWS}')
-        if not _is_int(self.seed):
-            raise ValueError('The seed must be an integer')
-        if not isinstance(self.metadata, Mapping):
-            raise ValueError('Model metadata must be a JSON object')
-        try:
-            canonical_json(dict(self.metadata))
-        except (TypeError, ValueError) as error:
-            raise ValueError(f'Model metadata is not JSON serializable: {error}') from error
-        if self.generations_sha256 is not None:
-            validate_sha256(self.generations_sha256, 'generations SHA-256')
         if self.protocol_version != PROTOCOL_VERSION:
             raise ValueError(
                 f'Written under pseval protocol {self.protocol_version}, but this is protocol '
@@ -131,36 +99,13 @@ class Provenance:
         }
 
     @classmethod
-    def from_dict(cls, value: object) -> Self:
+    def from_dict(cls, value: dict[str, object]) -> Self:
         """Read a stored record.
 
         Raises:
-            ValueError: If the record is malformed or written under another protocol version.
+            ValueError: If it is written under another protocol version.
         """
-        fields = {
-            'protocol_version',
-            'dataset',
-            'fingerprint',
-            'label',
-            'selection',
-            'num_samples',
-            'seed',
-            'metadata',
-            'generations_sha256',
-        }
-        if not isinstance(value, dict) or set(value) != fields:
-            raise ValueError('Invalid pseval provenance')
-        return cls(
-            protocol_version=value['protocol_version'],
-            dataset=value['dataset'],
-            fingerprint=value['fingerprint'],
-            label=value['label'],
-            selection=Selection.from_dict(value['selection']),
-            num_samples=value['num_samples'],
-            seed=value['seed'],
-            metadata=value['metadata'],
-            generations_sha256=value['generations_sha256'],
-        )
+        return cls(**value | {'selection': Selection.from_dict(value['selection'])})
 
     def scored(self, generations_sha256: str) -> Self:
         """This record as stored on the scores of the generations file with that hash."""
@@ -204,7 +149,3 @@ class Provenance:
                 f'Produced on benchmark {self.dataset} ({self.fingerprint[:12]}), not on '
                 f'{dataset} ({fingerprint[:12]})'
             )
-
-
-def _is_int(value: object) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool)

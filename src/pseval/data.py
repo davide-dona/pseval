@@ -22,10 +22,8 @@ type PrefixKey = tuple[str, int]
 class Log:
     """One split of a benchmark, in log units, one row per event.
 
-    Each case is a run of consecutive rows ordered by timestamp. The columns are the canonical
-    case, activity, resource, timestamp, and inter-event minutes columns, and every other column of
-    the original log, unchanged. A cut `(case_id, k)` splits a case into its
-    first `k` events, the prefix, and the rest, the suffix; both hold at least one event.
+    A cut `(case_id, k)` splits a case into its first `k` events, the prefix, and the rest, the
+    suffix; both hold at least one event.
     """
 
     def __init__(self, events: pd.DataFrame, *, prefix_starts: np.ndarray | None = None) -> None:
@@ -34,36 +32,15 @@ class Log:
             events: The split's events, each case's rows consecutive and in time order.
             prefix_starts: `[cases]` the first cut of each case, in case order. Every cut of
                 every case when None.
-
-        Raises:
-            ValueError: If a structural column is missing or null, a case is not contiguous,
-                or an inter-event time is negative.
         """
-        structural = {CASE_KEY, ACTIVITY_KEY, RESOURCE_KEY, TIMESTAMP_KEY, INTER_EVENT_MINUTES_KEY}
-        missing = structural - set(events.columns)
-        if missing:
-            raise ValueError(f'A log needs the columns {sorted(missing)}')
-        if (
-            events[[CASE_KEY, ACTIVITY_KEY, TIMESTAMP_KEY, INTER_EVENT_MINUTES_KEY]]
-            .isna()
-            .any(axis=None)
-        ):
-            raise ValueError('A log has a null case, activity, timestamp, or inter-event time')
-        events = events.reset_index(drop=True)
-        cases = events[CASE_KEY].astype(str)
-        changes = np.flatnonzero(cases.ne(cases.shift()).to_numpy())
-        if cases.iloc[changes].duplicated().any():
-            raise ValueError("A log's cases must each be one run of consecutive rows")
-        if (events[INTER_EVENT_MINUTES_KEY] < 0).any():
-            raise ValueError("A log's inter-event times must be nonnegative")
+        cases = events[CASE_KEY].astype(str).to_numpy(dtype=object)
+        changes = np.flatnonzero(np.append(True, cases[1:] != cases[:-1]))
         self._events = events
-        self._case_ids = cases.iloc[changes].to_numpy(dtype=object)
+        self._case_ids = cases[changes]
         self._offsets = np.append(changes, len(events)).astype(np.int64)
-        lengths = np.diff(self._offsets)
-        starts = np.ones(len(lengths), np.int64) if prefix_starts is None else prefix_starts
-        if starts.shape != lengths.shape or (starts < 1).any():
-            raise ValueError('A log needs one positive first cut per case')
-        self._prefix_starts = starts.astype(np.int64)
+        self._prefix_starts = (
+            np.ones(len(changes), np.int64) if prefix_starts is None else prefix_starts
+        )
 
     def __len__(self) -> int:
         """How many events the log holds."""
@@ -101,17 +78,7 @@ class Log:
         ]
 
     def prefixes(self, keys: Sequence[PrefixKey]) -> 'PrefixBatch':
-        """Gather the observed events of each prefix.
-
-        Args:
-            keys: Cuts of this log.
-
-        Returns:
-            The prefixes in the order of `keys`.
-
-        Raises:
-            ValueError: If a key is not a cut of this log.
-        """
+        """Gather the observed events of each prefix, in the order of `keys`, cuts of this log."""
         rows = [self._rows(key) for key in keys]
         index = np.concatenate([np.zeros(0, np.int64), *(np.arange(*row) for row in rows)])
         lengths = np.fromiter((stop - start for start, stop in rows), np.int64, len(rows))
@@ -121,39 +88,21 @@ class Log:
             offsets=np.concatenate([np.zeros(1, np.int64), np.cumsum(lengths)]),
         )
 
-    def prefix_trace(self, key: PrefixKey) -> tuple[np.ndarray, np.ndarray]:
-        """The activity names `[k]` and inter-event minutes `[k]` of one prefix.
-
-        Raises:
-            ValueError: If the key is not a cut of this log.
-        """
+    def prefix_activities(self, key: PrefixKey) -> np.ndarray:
+        """The activity names `[k]` of one prefix."""
         start, stop = self._rows(key)
-        return self._activities[start:stop].copy(), self._minutes[start:stop].copy()
+        return self._activities[start:stop].copy()
 
     def suffix_trace(self, key: PrefixKey) -> tuple[np.ndarray, np.ndarray]:
-        """The activity names `[L]` and inter-event minutes `[L]` of one prefix's suffix.
-
-        Raises:
-            ValueError: If the key is not a cut of this log.
-        """
+        """The activity names `[L]` and inter-event minutes `[L]` of one prefix's suffix."""
         _, stop = self._rows(key)
         end = self._offsets[self._case_index[key[0]] + 1]
         return self._activities[stop:end].copy(), self._minutes[stop:end].copy()
 
     def _rows(self, key: PrefixKey) -> tuple[int, int]:
-        """The `[start, stop)` rows of one prefix.
-
-        Raises:
-            ValueError: If the key is not a cut of this log.
-        """
+        """The `[start, stop)` rows of one prefix."""
         case_id, k = key
-        case = self._case_index.get(case_id)
-        if case is None:
-            raise ValueError(f'No case {case_id!r} in this log')
-        start = int(self._offsets[case])
-        length = int(self._offsets[case + 1]) - start
-        if not self._prefix_starts[case] <= k < length:
-            raise ValueError(f'{key} is not a cut of this log')
+        start = int(self._offsets[self._case_index[case_id]])
         return start, start + int(k)
 
     @cached_property
@@ -180,13 +129,6 @@ class PrefixBatch:
     keys: tuple[PrefixKey, ...]
     events: pd.DataFrame
     offsets: np.ndarray  # [N + 1]
-
-    def __post_init__(self) -> None:
-        lengths = np.diff(self.offsets)
-        if self.offsets.shape != (len(self.keys) + 1,) or self.offsets[-1] != len(self.events):
-            raise ValueError('Prefix offsets do not match their keys and events')
-        if any(int(length) != k for length, (_, k) in zip(lengths, self.keys, strict=True)):
-            raise ValueError('Prefix events do not match their prefix lengths')
 
     def __len__(self) -> int:
         return len(self.keys)

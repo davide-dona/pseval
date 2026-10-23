@@ -5,44 +5,17 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import torch
 from tqdm import tqdm
 
 from pseval.benchmark.bundle import Benchmark
 from pseval.data import Log
-from pseval.generation.records import Generation
+from pseval.generation.join import observe
 from pseval.generation.store import Generations
 from pseval.metrics.scorer import Scorer
-from pseval.metrics.vocabulary import ActivityCodes
 from pseval.provenance import sha256
 from pseval.scoring.store import ScoresWriter
-
-
-def _require_observed(generation: Generation, log: Log, codes: ActivityCodes) -> None:
-    """Require a stored prefix and observed suffix to be the split's, as stored in float32.
-
-    Raises:
-        ValueError: If they differ.
-    """
-    key = (generation.case_id, generation.prefix_len)
-    for stored_activities, stored_minutes, (names, minutes) in (
-        (
-            generation.prefix_activities,
-            generation.prefix_inter_event_time_minutes,
-            log.prefix_trace(key),
-        ),
-        (
-            generation.truth.activities,
-            generation.truth.inter_event_time_minutes,
-            log.suffix_trace(key),
-        ),
-    ):
-        if stored_activities != codes.spell(names, unseen_as_unk=True) or not np.array_equal(
-            stored_minutes, minutes.astype(np.float32).astype(np.float64)
-        ):
-            raise ValueError(f'The observed events stored for {key} are not the test split')
 
 
 @dataclass(frozen=True)
@@ -73,10 +46,12 @@ def _init_worker(generations: Path, directory: Path, device: torch.device, proce
 
 def _score_block(block: int) -> pd.DataFrame:
     """Validate and score one row group, one scores row per prefix."""
-    generations = _worker.generations.block(block)
     scorer = _worker.scorer
+    generations = [
+        observe(_worker.test, key, samples, codes=scorer.codes)
+        for key, samples in _worker.generations.block(block)
+    ]
     for generation in generations:
-        _require_observed(generation, _worker.test, scorer.codes)
         scorer.require_draws(generation, num_samples=_worker.generations.provenance.num_samples)
     keys = pd.DataFrame(
         {
@@ -114,9 +89,9 @@ def score(
 ) -> Path:
     """Score a generations file and write the scores file.
 
-    The file must answer every test prefix exactly once with its stored draw count, hold the
-    benchmark's own prefixes and observed suffixes, and come from this benchmark and protocol
-    version. Each row group is scored in a worker process; the scores file holds one row per
+    The file must answer every test prefix exactly once with its stored draw count and come from
+    this benchmark and protocol version. Prefixes and observed suffixes are read from the
+    benchmark. Each row group is scored in a worker process; the scores file holds one row per
     prefix in file order, with every metric.
 
     Args:

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Self
 
 from pseval.benchmark.specs import SPECS, DatasetSpec
-from pseval.provenance import PROTOCOL_VERSION, canonical_json, sha256, validate_sha256
+from pseval.provenance import PROTOCOL_VERSION, canonical_json, sha256
 
 MANIFEST = 'manifest.json'
 
@@ -50,13 +50,6 @@ class Manifest:
                 f'The {self.dataset} bundle is for pseval protocol {self.protocol_version}, but '
                 f'this is protocol {PROTOCOL_VERSION}.'
             )
-        validate_sha256(self.original_sha256, 'original log SHA-256')
-        if set(self.files) != set(PROTOCOL_FILES):
-            raise ValueError(f'A bundle manifest lists exactly {sorted(PROTOCOL_FILES)}')
-        if self.reference is not None and set(self.reference) != set(REFERENCE_FILES):
-            raise ValueError(f'A bundle reference lists exactly {sorted(REFERENCE_FILES)}')
-        for value in (*self.files.values(), *(self.reference or {}).values()):
-            validate_sha256(value, 'bundle file SHA-256')
         if self.fingerprint != _fingerprint(
             self.dataset, self.spec, self.original_sha256, self.files
         ):
@@ -87,21 +80,10 @@ class Manifest:
         """Read a manifest file.
 
         Raises:
-            ValueError: If it is malformed or its fingerprint does not match its contents.
+            ValueError: If it is for another protocol version or its fingerprint does not match
+                its contents.
         """
-        payload = json.loads(path.read_bytes())
-        fields = {
-            'protocol_version',
-            'dataset',
-            'spec',
-            'original_sha256',
-            'files',
-            'fingerprint',
-            'reference',
-        }
-        if not isinstance(payload, dict) or set(payload) != fields:
-            raise ValueError(f'{path} is not a pseval bundle manifest')
-        return cls(**payload)
+        return cls(**json.loads(path.read_bytes()))
 
     def write(self, path: Path) -> None:
         payload = {

@@ -38,8 +38,6 @@ class ScoresWriter:
             path: Destination file, replaced if it exists.
             provenance: The provenance of the scored generations, naming their file.
         """
-        if provenance.generations_sha256 is None:
-            raise ValueError('A scores file must name the generations it scored')
         self._path = path
         self._writer = pq.ParquetWriter(where=path, schema=provenance.attach_to_schema(SCHEMA))
         self._buffered: list[pd.DataFrame] = []
@@ -100,7 +98,5 @@ def read_scores(path: Path) -> Scores:
         if not parquet.schema_arrow.remove_metadata().equals(SCHEMA):
             raise ValueError(f'{path} does not have the scores schema of this pseval version')
         provenance = Provenance.from_parquet(parquet)
-        if provenance.generations_sha256 is None:
-            raise ValueError(f'{path} is a generations file, not a scores file')
         frame = parquet.read().to_pandas()
     return Scores(frame=frame, provenance=provenance)

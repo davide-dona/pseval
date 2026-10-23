@@ -19,12 +19,7 @@ class ActivityCodes:
         """
         Args:
             vocabulary: The benchmark's activity names in order, `UNK` among them.
-
-        Raises:
-            ValueError: If names repeat or `UNK` is missing.
         """
-        if len(set(vocabulary)) != len(vocabulary) or UNK not in vocabulary:
-            raise ValueError('An activity vocabulary needs distinct names including UNK')
         self._codes = {name: chr(_FIRST_CODE + index) for index, name in enumerate(vocabulary)}
 
     @property
