@@ -22,7 +22,7 @@ def validate(
     Args:
         model: The model to score, its `sample` called on validation prefixes only.
         benchmark: The benchmark whose validation split to read.
-        num_samples: Draws per prefix, at least the ten best-of-10 needs.
+        num_samples: Draws per prefix, at least `MIN_DRAWS`.
         seed: Seed of the draws.
         batch_size: Prefixes per `sample` call.
         device: Where the signature kernel is solved.
@@ -32,7 +32,7 @@ def validate(
         selects the model is its author's choice.
 
     Raises:
-        ValueError: If `num_samples` is below ten or the draws break the protocol contract.
+        ValueError: If `num_samples` is below `MIN_DRAWS` or the draws break the protocol contract.
     """
     # Prepare the validation data
     if num_samples < MIN_DRAWS:

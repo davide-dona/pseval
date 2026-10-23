@@ -1,65 +1,39 @@
-import math
-
 import numpy as np
 
 
-def energy_score(distances: np.ndarray) -> float:
-    """Return the fair energy score from distances between draws.
+def energy_score(distances_between: np.ndarray, distances_to_truth: np.ndarray) -> float:
+    """Return the fair energy score of the draws, which is equivalent to:
+    `mean_i d(x_i, y) - 1/2 mean_{i!=j} d(x_i, x_j)`.
 
     Args:
-        distances: `[K, K + 1]` distances from each of at least two draws to every draw, then to
-            the observation.
-
-    Returns:
-        Mean distance to the observation minus half the mean distance over pairs of different
-        draws.
+        distances_between: `[K, K]` distance between each pair of at least two draws, zero on
+            the diagonal.
+        distances_to_truth: `[K]` distance from each draw to the observation.
     """
-    return float(distances[:, -1].mean()) - 0.5 * mean_between_draws(distances[:, :-1])
+    return float(distances_to_truth.mean()) - 0.5 * mean_between_draws(distances_between)
 
 
-def mean_between_draws(distances: np.ndarray) -> float:
-    """Return the mean distance over ordered pairs of different draws.
-
-    The diagonal is zero, so summing the whole matrix sums the pairs of different draws.
+def mean_between_draws(distances_between: np.ndarray) -> float:
+    """Return the mean distance over ordered pairs of different draws, `mean_{i!=j} d(x_i, x_j)`.
 
     Args:
-        distances: `[K, K]` distances between at least two draws.
+        distances_between: `[K, K]` distance between each pair of at least two draws, zero on
+            the diagonal.
     """
-    draws = len(distances)
-    return float(distances.sum()) / (draws * (draws - 1.0))
-
-
-def best_of_k(similarities: np.ndarray, k: int) -> float:
-    """Return the expected best similarity over k draws taken without replacement.
-
-    With the K draw similarities sorted ascending, the i-th smallest (1-indexed) is the best of
-    a uniformly random k-subset with probability C(i - 1, k - 1) / C(K, k). The estimate is
-    unbiased for every k <= K, so it does not depend on how many draws were generated.
-
-    Args:
-        similarities: `[K]` one similarity per draw, repeated draws retained.
-        k: Subset size, at most K.
-    """
-    draw_count = len(similarities)
-    ordered = np.sort(similarities)  # [K]
-    subsets = math.comb(draw_count, k)
-    weights = [math.comb(rank, k - 1) / subsets for rank in range(draw_count)]  # [K]
-    return float(ordered @ weights)
+    draws = len(distances_between)
+    return float(distances_between.sum()) / (draws * (draws - 1.0))
 
 
 def crps(draws: np.ndarray, truth: float) -> float:
-    """Return the fair CRPS of scalar draws, integrated over gaps between sorted samples.
+    """Return the fair CRPS of scalar draws, `mean_i |x_i - y| - 1/2 mean_{i!=j} |x_i - x_j|`.
 
-    The fair score equals a sum of gap lengths with nonnegative weights, so it never
-    subtracts two large accuracy and diversity totals. That keeps it exact and nonnegative
-    when a few draws are orders of magnitude larger than the rest.
+    It is summed over the gaps between sorted draws with nonnegative weights, never as that
+    difference, which cancels catastrophically when a few draws are orders of magnitude larger
+    than the rest.
 
     Args:
-        draws: `[K]` numeric samples, at least two, with repeated draws retained.
-        truth: Observed quantity, in the same units as the samples.
-
-    Returns:
-        Fair absolute-distance energy score in the input units.
+        draws: `[K]` at least two draws.
+        truth: The observation, in the units of the draws.
     """
     draw_count = len(draws)
     ordered = np.sort(draws)  # [K]
@@ -78,15 +52,22 @@ def crps(draws: np.ndarray, truth: float) -> float:
 
 
 def mae(draws: np.ndarray, truth: float) -> float:
-    """Return the mean absolute error of scalar draws, the accuracy term of the CRPS."""
+    """Return the error term of the CRPS, `mean_i |x_i - y|`.
+
+    Args:
+        draws: `[K]` draws.
+        truth: The observation, in the units of the draws.
+    """
     return float(np.abs(draws - truth).mean())
 
 
 def crps_spread(draws: np.ndarray) -> float:
-    """Return half the mean absolute difference over pairs of different draws, at least two.
+    """Return the spread term of the CRPS, `1/2 mean_{i!=j} |x_i - x_j|`.
 
-    It is the spread term of the fair CRPS, which equals the mean absolute error minus it. The
-    sum over pairs is taken over gaps between sorted samples with nonnegative weights.
+    Like `crps`, it is summed over the gaps between sorted draws with nonnegative weights.
+
+    Args:
+        draws: `[K]` at least two draws.
     """
     draw_count = len(draws)
     gaps = np.diff(np.sort(draws))  # [K - 1]
@@ -97,36 +78,33 @@ def crps_spread(draws: np.ndarray) -> float:
 
 
 def randomized_pit(draws: np.ndarray, truth: float, *, noise: float) -> float:
-    """Return the randomized probability integral transform of the truth among the draws.
+    """Return the randomized PIT of the observation, `(#{x_i < y} + V (#{x_i = y} + 1)) / (K + 1)`.
 
-    Ties between draws and the truth are spread uniformly by the noise, so the value is uniform
-    on [0, 1] for a calibrated forecast even when draws and truth are discrete.
+    The noise `V` spreads the observation uniformly among its ties, so the value is uniform on
+    [0, 1] for a calibrated forecast even when draws and observation are discrete.
 
     Args:
-        draws: `[K]` numeric samples, with repeated draws retained.
-        truth: Observed quantity, in the same units as the samples.
-        noise: Uniform value on [0, 1] that places the truth among its ties.
-
-    Returns:
-        (draws below truth + noise * (draws equal to truth + 1)) / (K + 1).
+        draws: `[K]` draws.
+        truth: The observation, in the units of the draws.
+        noise: `V`, uniform on [0, 1].
     """
     below = float((draws < truth).sum())
     ties = float((draws == truth).sum())
     return (below + noise * (ties + 1.0)) / (len(draws) + 1.0)
 
 
-def kernel_score(gram: np.ndarray) -> float:
-    """Return the fair kernel score from a normalized Gram matrix with the observation last.
+def kernel_score(kernels_between: np.ndarray, kernels_to_truth: np.ndarray) -> float:
+    """Return the fair kernel score, `1/2 mean_{i!=j} k(x_i, x_j) - mean_i k(x_i, y) + 1/2`.
 
-    With a unit self-kernel the score reads `1/2 E k(X, X') - E k(X, y) + 1/2`, the expectation
-    over pairs of different draws.
+    The constant makes the score of draws all equal to the observation zero under a normalized
+    kernel.
 
     Args:
-        gram: `[K + 1, K + 1]` kernel between every pair of at least two draws, the observation
-            last.
+        kernels_between: `[K, K]` kernel between each pair of at least two draws, one on the
+            diagonal.
+        kernels_to_truth: `[K]` kernel between each draw and the observation.
     """
-    draws = len(gram) - 1
-    to_truth = float(gram[:draws, draws].mean())
-    between = gram[:draws, :draws]
-    pairs = (float(between.sum()) - float(between.trace())) / (draws * (draws - 1))
-    return 0.5 * pairs - to_truth + 0.5
+    draws = len(kernels_between)
+    pair_sum = float(kernels_between.sum()) - float(kernels_between.trace())
+    pairs = pair_sum / (draws * (draws - 1.0))
+    return 0.5 * pairs - float(kernels_to_truth.mean()) + 0.5

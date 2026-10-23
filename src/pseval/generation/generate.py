@@ -39,7 +39,7 @@ def generate(
         label: The model's name, stored with the generations and their scores.
         metadata: Anything the author records with the model, as a JSON object, such as a
             checkpoint hash or a configuration.
-        num_samples: Draws per prefix, at least the ten best-of-10 needs.
+        num_samples: Draws per prefix, at least `MIN_DRAWS`.
         seed: Seed every batch seed is derived from.
         batch_size: Prefixes per `sample` call.
 
@@ -47,8 +47,8 @@ def generate(
         `path`.
 
     Raises:
-        ValueError: If `num_samples` is below ten or the draws break the protocol contract. The
-            file is removed.
+        ValueError: If `num_samples` is below `MIN_DRAWS` or the draws break the protocol
+            contract. The file is removed.
     """
     if num_samples < MIN_DRAWS:
         raise ValueError(f'Generation needs at least {MIN_DRAWS} draws per prefix')

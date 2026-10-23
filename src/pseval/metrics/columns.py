@@ -30,9 +30,6 @@ class PrefixScores:
     activity_spread_error_gap: float
     # Distinct activity suffixes per draw, 1.0 when every draw differs.
     unique_suffix_ratio: float
-    # Expected highest DLS to the observed suffix among 5 and 10 random draws.
-    best_of_5_dls: float
-    best_of_10_dls: float
     # Fair activity energy scores on DLD, exact-match distance, and multiset Jaccard distance
     # over padded bigrams.
     energy_score_dls: float
@@ -79,8 +76,8 @@ class PrefixScores:
 
 METRIC_KEYS = tuple(field.name for field in fields(PrefixScores))
 
-# The fewest draws per prefix every metric is defined on: best-of-10 needs ten.
-MIN_DRAWS = 10
+# The fewest draws per prefix every metric is defined on: the pairwise terms need two.
+MIN_DRAWS = 2
 
 # The proper scoring rules, lower is better. Models are ranked on them.
 PROPER_SCORES = (
