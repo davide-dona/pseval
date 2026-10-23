@@ -7,18 +7,23 @@ from pseval.data import PrefixBatch, SuffixDraws
 
 @runtime_checkable
 class SuffixModel(Protocol):
-    """What pseval asks of a trained model.
+    """What pseval asks of a trained model."""
 
-    How a model trains and selects itself, on `Benchmark.train` and `Benchmark.validation`, is its
-    author's choice. `sample` receives observed prefixes only and returns, for each prefix in
-    order, `num_samples` draws spelled on the benchmark vocabulary, in inter-event minutes, no
-    longer than the benchmark's `max_suffix_length`. It must depend on nothing but the prefixes
-    and `seed`.
-    """
+    def sample(self, prefixes: PrefixBatch, num_samples: int, *, seed: int) -> list[SuffixDraws]:
+        """Draw suffixes for a batch of observed prefixes.
 
-    def sample(
-        self, prefixes: PrefixBatch, num_samples: int, *, seed: int
-    ) -> list[SuffixDraws]: ...
+        The draws must depend on nothing but `prefixes` and `seed`.
+
+        Args:
+            prefixes: The observed prefixes, holding no event past each prefix's last.
+            num_samples: Draws per prefix.
+            seed: Seed of the batch's draws.
+
+        Returns:
+            For each prefix in order, `num_samples` draws spelled on the benchmark vocabulary, in
+            inter-event minutes, each at most the benchmark's `max_suffix_length` events long.
+        """
+        ...
 
 
 def batch_seed(seed: int, batch: int) -> int:
