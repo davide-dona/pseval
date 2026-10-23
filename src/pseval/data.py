@@ -34,12 +34,16 @@ class Log:
                 every case when None.
         """
         cases = events[CASE_KEY].astype(str).to_numpy(dtype=object)
-        changes = np.flatnonzero(np.append(True, cases[1:] != cases[:-1]))
+        # A case starts at the first row and wherever the case differs from the row before
+        starts = np.flatnonzero(np.append(True, cases[1:] != cases[:-1]))
         self._events = events
-        self._case_ids = cases[changes]
-        self._offsets = np.append(changes, len(events)).astype(np.int64)
+        # `[cases]` id of each case, in log order.
+        self._case_ids = cases[starts]
+        # `[cases + 1]` row where each case starts, then the past-the-end row.
+        self._offsets = np.append(starts, len(events)).astype(np.int64)
+        # `[cases]` length of each case's shortest cut.
         self._prefix_starts = (
-            np.ones(len(changes), np.int64) if prefix_starts is None else prefix_starts
+            np.ones(len(starts), np.int64) if prefix_starts is None else prefix_starts
         )
 
     def __len__(self) -> int:
@@ -80,6 +84,7 @@ class Log:
     def prefixes(self, keys: Sequence[PrefixKey]) -> 'PrefixBatch':
         """Gather the observed events of each prefix, in the order of `keys`, cuts of this log."""
         rows = [self._rows(key) for key in keys]
+        # The leading empty array keeps the concatenation valid when `keys` is empty.
         index = np.concatenate([np.zeros(0, np.int64), *(np.arange(*row) for row in rows)])
         lengths = np.fromiter((stop - start for start, stop in rows), np.int64, len(rows))
         return PrefixBatch(
