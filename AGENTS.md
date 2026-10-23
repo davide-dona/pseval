@@ -15,14 +15,16 @@ number means, from splits to metrics. Training and selection belong to the model
 
 ## Task Routing
 
-| Task | Area |
+Read the most specific guide before changing files in its scope.
+
+| Task | Guide |
 | --- | --- |
 | Model boundary: `Log`, `PrefixBatch`, `SuffixDraws`, `SuffixModel` | `src/pseval/data.py`, `src/pseval/protocol.py` |
-| Dataset specs, bundle layout, manifests, fingerprints, and loading | `src/pseval/benchmark/` |
-| Log filtering, the out-of-time split, bundle builds, and the reference | `src/pseval/preprocessing/` |
-| Test-split sampling, the generations file, and its provenance | `src/pseval/generation/` |
-| Metric definitions, vocabulary, Declare checks, and the signature kernel | `src/pseval/metrics/` |
-| The scores file, summaries, skill, and validation | `src/pseval/scoring/` |
+| Dataset specs, bundle layout, manifests, fingerprints, and loading | [`src/pseval/benchmark/AGENTS.md`](src/pseval/benchmark/AGENTS.md) |
+| Log filtering, the out-of-time split, bundle builds, and the reference | [`src/pseval/preprocessing/AGENTS.md`](src/pseval/preprocessing/AGENTS.md) |
+| Test-split sampling, the generations file, and its provenance | [`src/pseval/generation/AGENTS.md`](src/pseval/generation/AGENTS.md) |
+| Metric definitions, vocabulary, Declare checks, and the signature kernel | [`src/pseval/metrics/AGENTS.md`](src/pseval/metrics/AGENTS.md) |
+| The scores file, summaries, skill, and validation | [`src/pseval/scoring/AGENTS.md`](src/pseval/scoring/AGENTS.md) |
 | Trained baselines using the public API | [`baselines/AGENTS.md`](baselines/AGENTS.md) |
 
 See [`README.md`](README.md) for the user-facing workflow.
