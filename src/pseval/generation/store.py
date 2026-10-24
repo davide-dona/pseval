@@ -12,13 +12,8 @@ import pyarrow.parquet as pq
 from pseval.data import Forecast, PrefixKey
 from pseval.record import Record
 
-# Activity names, one per event, dictionary encoded on disk.
-_ACTIVITIES = pa.list_(pa.field(name='element', type=pa.string()))
-# Inter-event minutes, one per activity. Stored in float32, the width models emit.
-_MINUTES = pa.list_(pa.field(name='element', type=pa.float32()))
-
-# The generations file: one row per test prefix, the draws nested inside it. Prefixes and observed
-# suffixes are not stored: scoring reads them from the benchmark.
+# The generations file: one row per test prefix, the draws nested inside it.
+# Prefixes and observed suffixes are not stored, but rather read from the benchmark.
 SCHEMA = pa.schema(
     [
         ('case_id', pa.large_string()),
@@ -30,8 +25,17 @@ SCHEMA = pa.schema(
                     name='element',
                     type=pa.struct(
                         [
-                            ('activities', _ACTIVITIES),
-                            ('inter_event_time_minutes', _MINUTES),
+                            # Activity names, one per event, dictionary encoded on disk.
+                            (
+                                'activities',
+                                pa.list_(pa.field(name='element', type=pa.string())),
+                            ),
+                            # Inter-event minutes, one per activity. Stored in float32, the width
+                            # models emit.
+                            (
+                                'inter_event_time_minutes',
+                                pa.list_(pa.field(name='element', type=pa.float32())),
+                            ),
                             ('truncated', pa.bool_()),
                         ]
                     ),
@@ -41,13 +45,19 @@ SCHEMA = pa.schema(
     ]
 )
 
+# Parquet paths of `SCHEMA` columns, which must follow its field names.
+# The key columns, read alone to list the prefixes without decoding their draws.
 _KEY_COLUMNS = ['case_id', 'prefix_len']
+# The activity name leaf, dictionary encoded when written.
 _NAME_LEAVES = ['generated_draws.list.element.activities.list.element']
+# The minutes leaf, written with byte stream split, which compresses floats better.
 _FLOAT_LEAVES = ['generated_draws.list.element.inter_event_time_minutes.list.element']
+# The truncation flag leaf, read alone to count each prefix's draws.
 _TRUNCATED_LEAF = 'generated_draws.list.element.truncated'
 
 
 def _row(key: PrefixKey, forecast: Forecast) -> dict:
+    """One prefix's key and forecast as a `SCHEMA` row, one struct per draw."""
     return {
         'case_id': key[0],
         'prefix_len': key[1],
