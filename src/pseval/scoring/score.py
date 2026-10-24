@@ -53,9 +53,9 @@ def _score_block(block: int) -> pd.DataFrame:
     test, forecasts = _worker.test, _worker.generations.block(block)
     keys = pd.DataFrame(
         {
-            'case_id': [case_id for (case_id, _), _ in forecasts],
-            'prefix_len': [prefix_len for (_, prefix_len), _ in forecasts],
-            'suffix_len': [len(test.suffix_trace(key)[0]) for key, _ in forecasts],
+            'case_id': [cut.case_id for cut, _ in forecasts],
+            'prefix_len': [cut.prefix_len for cut, _ in forecasts],
+            'suffix_len': [len(test.suffix_trace(cut)[0]) for cut, _ in forecasts],
         }
     )
     scores = _worker.scorer.score(test, forecasts, num_samples=_worker.num_samples)
@@ -94,10 +94,10 @@ def score(
     with GenerationsReader(generations) as file:
         file.record.require_input('benchmark', benchmark.digest)
         label, blocks, prefixes = file.record.label, file.blocks, file.prefixes
-        keys = file.prefix_keys()
+        cuts = file.cuts()
         num_samples = file.num_samples()
     test = benchmark._test()
-    if len(set(keys)) != len(keys) or set(keys) != set(test.cuts()):
+    if len(set(cuts)) != len(cuts) or set(cuts) != set(test.cuts()):
         raise ValueError('The generations must answer every test prefix exactly once')
     record = Record(
         dataset=benchmark.dataset,

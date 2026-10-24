@@ -8,7 +8,7 @@ to the numbers a paper reports. It also scores validation prefixes in memory for
 | Module | Owns |
 | --- | --- |
 | `score.py` | `score`: input checks and the spawned worker pool over row groups. |
-| `store.py` | The scores Parquet schema, `ScoresWriter`, `Scores`, and `read_scores`. |
+| `store.py` | The scores Parquet schema, `ScoresWriter`, `ScoresReader`, and `Scores`. |
 | `summary.py` | `Summary`: equal-weight means overall and by prefix and true suffix length. |
 | `skill.py` | `skill`: each proper score against the benchmark's unconditional reference. |
 | `reference.py` | `Unconditional`, the reference model whose scores every benchmark stores. |
@@ -25,7 +25,7 @@ to the numbers a paper reports. It also scores validation prefixes in memory for
   one process per CPU starts, at most `MAX_DEFAULT_WORKERS`. Results are written in file order.
 - The scores file stores `case_id`, `prefix_len`, `suffix_len`, then `METRIC_KEYS` as float64,
   and a `Record` with the generations' label and the digests of the benchmark and the
-  generations file. `read_scores` rejects any other schema.
+  generations file. `ScoresReader` rejects any other schema.
 - Every mean weighs prefixes equally and sums with `math.fsum`, so row order never changes a
   reported number.
 - `skill` is `1 - mean / reference mean` over `PROPER_SCORES` and requires the same prefixes as

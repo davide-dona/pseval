@@ -8,7 +8,7 @@ the only artifact a model contributes to its scores.
 | Module | Owns |
 | --- | --- |
 | `generate.py` | `generate`: test cuts, batching, batch seeds, and the write loop. |
-| `store.py` | The generations Parquet schema, `GenerationsWriter`, and `GenerationsReader`. |
+| `store.py` | The generations Parquet schema, `GenerationsWriter`, `GenerationsReader`, and `Generations`. |
 
 ## Contracts
 
@@ -19,7 +19,7 @@ the only artifact a model contributes to its scores.
   `Scorer.require_forecast` checks the count, at least two, the length cap, and finite nonnegative
   minutes.
   Observed activities unseen in train are named `UNK`; a drawn one is an error.
-- The file holds one row per prefix: the key and, per draw, its activity names, dictionary
+- The file holds one row per prefix: its cut and, per draw, its activity names, dictionary
   encoded, float32 minutes, and truncation flag. Its `Record`, in the schema metadata, names
   the dataset, the model label, and the benchmark digest. The draw count is not stored: it is
   read from the draws. Prefixes and observed suffixes are not stored; scoring reads them from

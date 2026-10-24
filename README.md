@@ -22,7 +22,8 @@ generations = pseval.generate(
     directory / 'generations.parquet',
     label='mine',
 )
-scores = pseval.read_scores(pseval.score(generations, benchmark))
+with pseval.ScoresReader(pseval.score(generations, benchmark)) as reader:
+    scores = reader.read()
 print(scores.summary().overall)
 print(pseval.skill(scores, benchmark))
 ```

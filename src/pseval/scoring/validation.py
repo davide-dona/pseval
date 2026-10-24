@@ -38,14 +38,14 @@ def validate(
     scores = []
     # Score the prefixes in batches, to avoid memory blowup on large logs
     for batch, start in enumerate(range(0, len(cuts), batch_size)):
-        batch_keys = cuts[start : start + batch_size]
+        batch_cuts = cuts[start : start + batch_size]
         # Draw the suffixes from the model, then score them
         forecasts = forecast(
-            model, log.prefixes(batch_keys), num_samples, seed=batch_seed(seed, batch)
+            model, log.prefixes(batch_cuts), num_samples, seed=batch_seed(seed, batch)
         )
         scores.append(
             scorer.score(
-                log, list(zip(batch_keys, forecasts, strict=True)), num_samples=num_samples
+                log, list(zip(batch_cuts, forecasts, strict=True)), num_samples=num_samples
             )
         )
     return means(pd.concat(scores, ignore_index=True)).to_dict()

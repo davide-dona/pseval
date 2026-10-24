@@ -6,10 +6,10 @@ from typing import Self
 import numpy as np
 from declarray import Checker
 
-from pseval.data import Forecast, Suffix
+from pseval.data import Cut, Forecast, Suffix
 from pseval.metrics.signature import SignatureKernel
 
-# Seeds the uniform that breaks PIT ties, together with the prefix key.
+# Seeds the uniform that breaks PIT ties, together with the cut.
 PIT_SEED = 42
 
 
@@ -17,15 +17,10 @@ PIT_SEED = 42
 class Pairing:
     """One prefix's forecast and the observed suffix it is scored against."""
 
-    case_id: str
+    cut: Cut
     prefix_activities: tuple[str, ...]
     forecast: Forecast
     observed: Suffix
-
-    @property
-    def prefix_len(self) -> int:
-        """How many events the prefix holds."""
-        return len(self.prefix_activities)
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,7 +29,7 @@ class MetricInputs:
 
     # The prefix, its forecast, and its observed suffix.
     pairing: Pairing
-    # Uniform in [0, 1) breaking PIT ties, seeded by the prefix key alone.
+    # Uniform in [0, 1) breaking PIT ties, seeded by the cut alone.
     pit_noise: float
     # [K + 1, K + 1] normalized signature kernel between the draws and, last, the observed suffix.
     signature_gram: np.ndarray
@@ -129,6 +124,6 @@ def _activity_presence(pairing: Pairing, *, axes: Mapping[str, int]) -> np.ndarr
 
 
 def _pit_noise(pairing: Pairing) -> float:
-    """The uniform breaking one prefix's PIT ties, seeded by its key."""
-    seed = (PIT_SEED, zlib.crc32(pairing.case_id.encode()), pairing.prefix_len)
+    """The uniform breaking one prefix's PIT ties, seeded by its cut."""
+    seed = (PIT_SEED, zlib.crc32(pairing.cut.case_id.encode()), pairing.cut.prefix_len)
     return float(np.random.default_rng(seed).random())

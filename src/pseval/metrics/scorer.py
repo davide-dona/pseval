@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from declarray import Checker, DeclareModel, mine
 
-from pseval.data import ACTIVITY_KEY, CASE_KEY, Forecast, Log, PrefixKey, Suffix
+from pseval.data import ACTIVITY_KEY, CASE_KEY, Cut, Forecast, Log, Suffix
 from pseval.metrics.columns import METRIC_KEYS, PrefixScores
 from pseval.metrics.inputs import MetricInputs, Pairing
 from pseval.metrics.signature import SignatureKernel
@@ -127,11 +127,11 @@ class Scorer:
         """A checker of activity name traces against the soft Declare model."""
         return Checker(self.soft)
 
-    def require_forecast(self, key: PrefixKey, forecast: Forecast, *, num_samples: int) -> None:
+    def require_forecast(self, cut: Cut, forecast: Forecast, *, num_samples: int) -> None:
         """Require one prefix's forecast to honor the protocol contract.
 
         Args:
-            key: The prefix.
+            cut: The prefix.
             forecast: Its forecast.
             num_samples: How many draws the prefix was asked for.
 
@@ -142,20 +142,20 @@ class Scorer:
         if num_samples < 2:
             raise ValueError('Every metric needs at least two draws per prefix')
         if len(forecast) != num_samples:
-            raise ValueError(f'{key} has {len(forecast)} draws instead of {num_samples}')
+            raise ValueError(f'{cut} has {len(forecast)} draws instead of {num_samples}')
         if forecast.lengths.max() > self.max_suffix_length:
-            raise ValueError(f'{key} has a draw longer than the cap of {self.max_suffix_length}')
+            raise ValueError(f'{cut} has a draw longer than the cap of {self.max_suffix_length}')
         outside = {name for names in forecast.activities for name in names}.difference(self.axes)
         if outside:
-            raise ValueError(f'{key} has draws outside the vocabulary: {sorted(outside)!r}')
+            raise ValueError(f'{cut} has draws outside the vocabulary: {sorted(outside)!r}')
         minutes = np.concatenate(
             [np.zeros(0), *(draw.inter_event_time_minutes for draw in forecast)]
         )
         if not np.isfinite(minutes).all() or (minutes < 0).any():
-            raise ValueError(f'{key} has a negative or non-finite draw time')
+            raise ValueError(f'{cut} has a negative or non-finite draw time')
 
     def score(
-        self, log: Log, forecasts: Sequence[tuple[PrefixKey, Forecast]], *, num_samples: int
+        self, log: Log, forecasts: Sequence[tuple[Cut, Forecast]], *, num_samples: int
     ) -> pd.DataFrame:
         """Score a batch of prefixes against their observed suffixes.
 
@@ -172,10 +172,10 @@ class Scorer:
         Raises:
             ValueError: If a forecast breaks the protocol contract, as `require_forecast` checks.
         """
-        for key, forecast in forecasts:
-            self.require_forecast(key, forecast, num_samples=num_samples)
+        for cut, forecast in forecasts:
+            self.require_forecast(cut, forecast, num_samples=num_samples)
         batch = MetricInputs.of_batch(
-            [self._pairing(log, key, forecast) for key, forecast in forecasts],
+            [self._pairing(log, cut, forecast) for cut, forecast in forecasts],
             hard_checker=self.hard_checker,
             soft_checker=self.soft_checker,
             kernel=self.kernel,
@@ -187,12 +187,12 @@ class Scorer:
             dtype=np.float64,
         )
 
-    def _pairing(self, log: Log, key: PrefixKey, forecast: Forecast) -> Pairing:
+    def _pairing(self, log: Log, cut: Cut, forecast: Forecast) -> Pairing:
         """Join one prefix's forecast with its prefix and observed suffix from `log`."""
-        activities, minutes = log.suffix_trace(key)
+        activities, minutes = log.suffix_trace(cut)
         return Pairing(
-            case_id=key[0],
-            prefix_activities=self._known(log.prefix_activities(key)),
+            cut=cut,
+            prefix_activities=self._known(log.prefix_activities(cut)),
             forecast=forecast,
             observed=Suffix(activities=self._known(activities), inter_event_time_minutes=minutes),
         )

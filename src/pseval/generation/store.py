@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from dataclasses import dataclass
 from itertools import pairwise
 from pathlib import Path
 from types import TracebackType
@@ -9,7 +10,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
-from pseval.data import Draw, Forecast, PrefixKey
+from pseval.data import Cut, Draw, Forecast
 from pseval.record import Record
 
 # The generations file: one row per test prefix, the draws nested inside it.
@@ -48,11 +49,11 @@ SCHEMA = pa.schema(
 )
 
 
-def _row(key: PrefixKey, forecast: Forecast) -> dict:
+def _row(cut: Cut, forecast: Forecast) -> dict:
     """Convert one prefix's forecast to a generations file row."""
     return {
-        'case_id': key[0],
-        'prefix_len': key[1],
+        'case_id': cut.case_id,
+        'prefix_len': cut.prefix_len,
         'forecast': [
             {
                 'activities': list(draw.activities),
@@ -64,7 +65,7 @@ def _row(key: PrefixKey, forecast: Forecast) -> dict:
     }
 
 
-def _forecasts_from_table(table: pa.Table) -> list[tuple[PrefixKey, Forecast]]:
+def _forecasts_from_table(table: pa.Table) -> list[tuple[Cut, Forecast]]:
     """Decode a block column by column, each draw's times being a view of the block's.
 
     Raises:
@@ -87,13 +88,23 @@ def _forecasts_from_table(table: pa.Table) -> list[tuple[PrefixKey, Forecast]]:
             strict=True,
         )
     ]
-    keys = zip(
-        table.column('case_id').to_pylist(), table.column('prefix_len').to_pylist(), strict=True
-    )
     return [
-        (key, Forecast(draws=tuple(draws[first:last])))
-        for key, (first, last) in zip(keys, pairwise(structs.offsets.to_numpy()), strict=True)
+        (cut, Forecast(draws=tuple(draws[first:last])))
+        for cut, (first, last) in zip(
+            _cuts_from_table(table), pairwise(structs.offsets.to_numpy()), strict=True
+        )
     ]
+
+
+def _cuts_from_table(table: pa.Table) -> list[Cut]:
+    """The cut of every row, from the two key columns."""
+    return list(
+        map(
+            Cut,
+            table.column('case_id').to_pylist(),
+            table.column('prefix_len').to_pylist(),
+        )
+    )
 
 
 class GenerationsWriter:
@@ -138,10 +149,18 @@ class GenerationsWriter:
         if exception_type is not None:
             self._path.unlink(missing_ok=True)
 
-    def write(self, forecasts: Sequence[tuple[PrefixKey, Forecast]]) -> None:
+    def write(self, forecasts: Sequence[tuple[Cut, Forecast]]) -> None:
         """Write one batch of prefixes and their forecasts as one row group."""
-        rows = [_row(key, forecast) for key, forecast in forecasts]
+        rows = [_row(cut, forecast) for cut, forecast in forecasts]
         self._writer.write_table(table=pa.Table.from_pylist(mapping=rows, schema=SCHEMA))
+
+
+@dataclass(frozen=True, eq=False)
+class Generations:
+    """The contents of a generations file: each prefix's cut and forecast, and its record."""
+
+    forecasts: list[tuple[Cut, Forecast]]
+    record: Record
 
 
 class GenerationsReader:
@@ -190,16 +209,9 @@ class GenerationsReader:
         """How many prefixes the file answers, one per row."""
         return self._parquet.metadata.num_rows
 
-    def prefix_keys(self) -> list[PrefixKey]:
-        """The key of every row, in file order, read from the two key columns only."""
-        table = self._parquet.read(columns=['case_id', 'prefix_len'])
-        return list(
-            zip(
-                table.column('case_id').to_pylist(),
-                table.column('prefix_len').to_pylist(),
-                strict=True,
-            )
-        )
+    def cuts(self) -> list[Cut]:
+        """The cut of every row, in file order, read from the two key columns only."""
+        return _cuts_from_table(self._parquet.read(columns=['case_id', 'prefix_len']))
 
     def num_samples(self) -> int:
         """The draw count every prefix shares, read from the truncation flags only.
@@ -213,6 +225,12 @@ class GenerationsReader:
             raise ValueError(f'The prefixes hold different draw counts: {sorted(counts)}')
         return counts[0]
 
-    def block(self, block: int) -> list[tuple[PrefixKey, Forecast]]:
-        """Decode one row group: each prefix's key and forecast, in file order."""
+    def block(self, block: int) -> list[tuple[Cut, Forecast]]:
+        """Decode one row group: each prefix's cut and forecast, in file order."""
         return _forecasts_from_table(self._parquet.read_row_group(block))
+
+    def read(self) -> Generations:
+        """Decode every row of the file at once, holding all its draws in memory."""
+        return Generations(
+            forecasts=_forecasts_from_table(self._parquet.read()), record=self._record
+        )
