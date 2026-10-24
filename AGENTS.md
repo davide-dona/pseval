@@ -19,7 +19,7 @@ Read the most specific guide before changing files in its scope.
 
 | Task | Guide |
 | --- | --- |
-| Model boundary: `Log`, `PrefixBatch`, `SuffixDraws`, `SuffixModel` | `src/pseval/data.py`, `src/pseval/model.py` |
+| Model boundary: `Log`, `PrefixBatch`, `Suffix`, `Forecast`, `SuffixModel` | `src/pseval/data.py`, `src/pseval/model.py` |
 | Dataset specs, log filtering, the split, the benchmark directory, its digest, and builds | [`src/pseval/preprocessing/AGENTS.md`](src/pseval/preprocessing/AGENTS.md) |
 | Artifact records and digests | `src/pseval/record.py` |
 | Test-split sampling and the generations file | [`src/pseval/generation/AGENTS.md`](src/pseval/generation/AGENTS.md) |

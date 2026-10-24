@@ -1,5 +1,5 @@
 from pseval.benchmark import Benchmark, load_benchmark
-from pseval.data import Log, PrefixBatch, PrefixKey, SuffixDraws
+from pseval.data import Forecast, Log, PrefixBatch, PrefixKey
 from pseval.generation.generate import generate
 from pseval.model import SuffixModel
 from pseval.scoring.score import score
@@ -10,11 +10,11 @@ from pseval.scoring.validation import validate
 
 __all__ = [
     'Benchmark',
+    'Forecast',
     'Log',
     'PrefixBatch',
     'PrefixKey',
     'Scores',
-    'SuffixDraws',
     'SuffixModel',
     'Summary',
     'generate',

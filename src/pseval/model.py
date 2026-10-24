@@ -3,15 +3,14 @@ from typing import Protocol, runtime_checkable
 
 import numpy as np
 
-from pseval.data import PrefixBatch, SuffixDraws
-from pseval.generation.records import Draws
+from pseval.data import Forecast, PrefixBatch
 
 
 @runtime_checkable
 class SuffixModel(Protocol):
     """What pseval asks of a trained model."""
 
-    def sample(self, prefixes: PrefixBatch, num_samples: int, *, seed: int) -> list[SuffixDraws]:
+    def sample(self, prefixes: PrefixBatch, num_samples: int, *, seed: int) -> list[Forecast]:
         """Draw suffixes for a batch of observed prefixes.
 
         The draws must depend on nothing but `prefixes` and `seed`.
@@ -22,8 +21,9 @@ class SuffixModel(Protocol):
             seed: Seed of the batch's draws.
 
         Returns:
-            For each prefix in order, `num_samples` draws named from the benchmark vocabulary, in
-            inter-event minutes, each at most the benchmark's `max_suffix_length` events long.
+            For each prefix in order, a `Forecast` of `num_samples` draws named from the benchmark
+            vocabulary, in inter-event minutes, each at most the benchmark's `max_suffix_length`
+            events long.
         """
         ...
 
@@ -33,8 +33,10 @@ def batch_seed(seed: int, batch: int) -> int:
     return int(np.random.SeedSequence((seed, batch)).generate_state(1)[0])
 
 
-def draw(model: SuffixModel, prefixes: PrefixBatch, num_samples: int, *, seed: int) -> list[Draws]:
-    """Sample a batch's draws from a model.
+def forecast(
+    model: SuffixModel, prefixes: PrefixBatch, num_samples: int, *, seed: int
+) -> list[Forecast]:
+    """Sample a batch's forecasts from a model.
 
     Args:
         model: The model to sample.
@@ -43,14 +45,14 @@ def draw(model: SuffixModel, prefixes: PrefixBatch, num_samples: int, *, seed: i
         seed: Seed of the batch's draws.
 
     Returns:
-        One prefix's draws per prefix, in order.
+        One forecast per prefix, in order.
 
     Raises:
-        ValueError: If the model does not return `SuffixDraws` for every prefix.
+        ValueError: If the model does not return a `Forecast` for every prefix.
     """
-    draws = model.sample(prefixes, num_samples, seed=seed)
-    if not isinstance(draws, Sequence) or len(draws) != len(prefixes):
-        raise ValueError(f'Expected draws for {len(prefixes)} prefixes')
-    if not all(isinstance(prefix_draws, SuffixDraws) for prefix_draws in draws):
-        raise ValueError('A model must return SuffixDraws for every prefix')
-    return [Draws.of(prefix_draws) for prefix_draws in draws]
+    forecasts = model.sample(prefixes, num_samples, seed=seed)
+    if not isinstance(forecasts, Sequence) or len(forecasts) != len(prefixes):
+        raise ValueError(f'Expected forecasts for {len(prefixes)} prefixes')
+    if not all(isinstance(prefix_forecast, Forecast) for prefix_forecast in forecasts):
+        raise ValueError('A model must return a Forecast for every prefix')
+    return list(forecasts)

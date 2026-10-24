@@ -6,7 +6,7 @@ from typing import Self
 import numpy as np
 from declarray import Checker
 
-from pseval.generation.records import DecodedEvents, Draws
+from pseval.data import Forecast, Suffix
 from pseval.metrics.signature import SignatureKernel
 
 # Seeds the uniform that breaks PIT ties, together with the prefix key.
@@ -14,13 +14,13 @@ PIT_SEED = 42
 
 
 @dataclass(frozen=True, eq=False)
-class Forecast:
-    """One prefix's drawn suffixes and the observed suffix they are scored against."""
+class Pairing:
+    """One prefix's forecast and the observed suffix it is scored against."""
 
     case_id: str
     prefix_activities: tuple[str, ...]
-    draws: Draws
-    observed: DecodedEvents
+    forecast: Forecast
+    observed: Suffix
 
     @property
     def prefix_len(self) -> int:
@@ -30,10 +30,10 @@ class Forecast:
 
 @dataclass(frozen=True, slots=True)
 class MetricInputs:
-    """One prefix's forecast and the values needed to compute its metrics."""
+    """One prefix's pairing and the values needed to compute its metrics."""
 
-    # The prefix, its draws, and its observed suffix.
-    forecast: Forecast
+    # The prefix, its forecast, and its observed suffix.
+    pairing: Pairing
     # Uniform in [0, 1) breaking PIT ties, seeded by the prefix key alone.
     pit_noise: float
     # [K + 1, K + 1] normalized signature kernel between the draws and, last, the observed suffix.
@@ -52,7 +52,7 @@ class MetricInputs:
     @classmethod
     def of_batch(
         cls,
-        forecasts: Sequence[Forecast],
+        pairings: Sequence[Pairing],
         *,
         hard_checker: Checker,
         soft_checker: Checker,
@@ -62,7 +62,7 @@ class MetricInputs:
         """Compute the inputs for a batch of prefixes.
 
         Args:
-            forecasts: Decoded prefixes, drawn suffixes, and observed suffixes.
+            pairings: Prefixes, their forecasts, and their observed suffixes.
             hard_checker: Checks full conformance of each prefix completed by each suffix.
             soft_checker: Checks which soft rules each prefix completed by each suffix witnesses.
             kernel: Signature kernel comparing the draws and observed suffix of each prefix.
@@ -71,64 +71,64 @@ class MetricInputs:
         Returns:
             Metric inputs in input order. Empty input gives an empty list.
         """
-        if not forecasts:
+        if not pairings:
             return []
-        traces = _completed_traces(forecasts)
-        conformances = _per_prefix(hard_checker.check(traces).full, forecasts)
-        witnesses = _per_prefix(soft_checker.witnesses(traces), forecasts)
+        traces = _completed_traces(pairings)
+        conformances = _per_prefix(hard_checker.check(traces).full, pairings)
+        witnesses = _per_prefix(soft_checker.witnesses(traces), pairings)
         grams = kernel.grams(
             [
-                [kernel.embed(events, axes=axes) for events in _draws_then_observed(forecast)]
-                for forecast in forecasts
+                [kernel.embed(suffix, axes=axes) for suffix in _draws_then_observed(pairing)]
+                for pairing in pairings
             ]
         )
         return [
             cls(
-                forecast=forecast,
-                pit_noise=_pit_noise(forecast),
+                pairing=pairing,
+                pit_noise=_pit_noise(pairing),
                 signature_gram=gram,
                 draw_full_conformance=conformance[:-1],
                 observed_full_conformance=float(conformance[-1]),
                 soft_witnesses=soft_witnesses,
-                activity_presence=_activity_presence(forecast, axes=axes),
+                activity_presence=_activity_presence(pairing, axes=axes),
             )
-            for forecast, conformance, soft_witnesses, gram in zip(
-                forecasts, conformances, witnesses, grams, strict=True
+            for pairing, conformance, soft_witnesses, gram in zip(
+                pairings, conformances, witnesses, grams, strict=True
             )
         ]
 
 
-def _draws_then_observed(forecast: Forecast) -> list[DecodedEvents]:
+def _draws_then_observed(pairing: Pairing) -> list[Suffix]:
     """One prefix's draws, then its observed suffix."""
-    return [*forecast.draws, forecast.observed]
+    return [*pairing.forecast, pairing.observed]
 
 
-def _completed_traces(forecasts: Sequence[Forecast]) -> list[tuple[str, ...]]:
+def _completed_traces(pairings: Sequence[Pairing]) -> list[tuple[str, ...]]:
     """Each prefix completed by each of its draws, then by its observed suffix, over the batch."""
     return [
-        forecast.prefix_activities + events.activities
-        for forecast in forecasts
-        for events in _draws_then_observed(forecast)
+        pairing.prefix_activities + suffix.activities
+        for pairing in pairings
+        for suffix in _draws_then_observed(pairing)
     ]
 
 
-def _per_prefix(values: np.ndarray, forecasts: Sequence[Forecast]) -> list[np.ndarray]:
+def _per_prefix(values: np.ndarray, pairings: Sequence[Pairing]) -> list[np.ndarray]:
     """Split rows over the batch's completed traces into `[K + 1, ...]` rows per prefix."""
-    sizes = [len(forecast.draws) + 1 for forecast in forecasts]
+    sizes = [len(pairing.forecast) + 1 for pairing in pairings]
     return np.split(values, np.cumsum(sizes)[:-1])
 
 
-def _activity_presence(forecast: Forecast, *, axes: Mapping[str, int]) -> np.ndarray:
+def _activity_presence(pairing: Pairing, *, axes: Mapping[str, int]) -> np.ndarray:
     """`[K + 1, A]` whether the prefix completed by each draw, then by its observed suffix,
     holds each vocabulary activity."""
-    presence = np.zeros((len(forecast.draws) + 1, len(axes)), bool)
-    for row, events in enumerate(_draws_then_observed(forecast)):
-        presence[row, [axes[name] for name in events.activities]] = True
-    presence[:, [axes[name] for name in forecast.prefix_activities]] = True
+    presence = np.zeros((len(pairing.forecast) + 1, len(axes)), bool)
+    for row, suffix in enumerate(_draws_then_observed(pairing)):
+        presence[row, [axes[name] for name in suffix.activities]] = True
+    presence[:, [axes[name] for name in pairing.prefix_activities]] = True
     return presence
 
 
-def _pit_noise(forecast: Forecast) -> float:
+def _pit_noise(pairing: Pairing) -> float:
     """The uniform breaking one prefix's PIT ties, seeded by its key."""
-    seed = (PIT_SEED, zlib.crc32(forecast.case_id.encode()), forecast.prefix_len)
+    seed = (PIT_SEED, zlib.crc32(pairing.case_id.encode()), pairing.prefix_len)
     return float(np.random.default_rng(seed).random())

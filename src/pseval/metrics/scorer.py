@@ -10,10 +10,9 @@ import numpy as np
 import pandas as pd
 from declarray import Checker, DeclareModel, mine
 
-from pseval.data import ACTIVITY_KEY, CASE_KEY, Log, PrefixKey
-from pseval.generation.records import DecodedEvents, Draws
+from pseval.data import ACTIVITY_KEY, CASE_KEY, Forecast, Log, PrefixKey, Suffix
 from pseval.metrics.columns import METRIC_KEYS, PrefixScores
-from pseval.metrics.inputs import Forecast, MetricInputs
+from pseval.metrics.inputs import MetricInputs, Pairing
 from pseval.metrics.signature import SignatureKernel
 
 # The vocabulary entry an activity unseen in the train split is scored as.
@@ -128,12 +127,12 @@ class Scorer:
         """A checker of activity name traces against the soft Declare model."""
         return Checker(self.soft)
 
-    def require_draws(self, key: PrefixKey, draws: Draws, *, num_samples: int) -> None:
-        """Require one prefix's draws to honor the protocol contract.
+    def require_forecast(self, key: PrefixKey, forecast: Forecast, *, num_samples: int) -> None:
+        """Require one prefix's forecast to honor the protocol contract.
 
         Args:
             key: The prefix.
-            draws: Its draws.
+            forecast: Its forecast.
             num_samples: How many draws the prefix was asked for.
 
         Raises:
@@ -142,19 +141,19 @@ class Scorer:
         """
         if num_samples < 2:
             raise ValueError('Every metric needs at least two draws per prefix')
-        if len(draws) != num_samples:
-            raise ValueError(f'{key} has {len(draws)} draws instead of {num_samples}')
-        if draws.lengths.max() > self.max_suffix_length:
+        if len(forecast) != num_samples:
+            raise ValueError(f'{key} has {len(forecast)} draws instead of {num_samples}')
+        if forecast.lengths.max() > self.max_suffix_length:
             raise ValueError(f'{key} has a draw longer than the cap of {self.max_suffix_length}')
-        outside = {name for names in draws.activities for name in names}.difference(self.axes)
+        outside = {name for names in forecast.activities for name in names}.difference(self.axes)
         if outside:
             raise ValueError(f'{key} has draws outside the vocabulary: {sorted(outside)!r}')
-        minutes = draws.inter_event_time_minutes
+        minutes = forecast.inter_event_time_minutes
         if not np.isfinite(minutes).all() or (minutes < 0).any():
             raise ValueError(f'{key} has a negative or non-finite draw time')
 
     def score(
-        self, log: Log, draws: Sequence[tuple[PrefixKey, Draws]], *, num_samples: int
+        self, log: Log, forecasts: Sequence[tuple[PrefixKey, Forecast]], *, num_samples: int
     ) -> pd.DataFrame:
         """Score a batch of prefixes against their observed suffixes.
 
@@ -162,19 +161,19 @@ class Scorer:
 
         Args:
             log: The split the prefixes were cut from.
-            draws: Each prefix and its draws.
+            forecasts: Each prefix and its forecast.
             num_samples: How many draws each prefix was asked for.
 
         Returns:
             One row per prefix in input order, one float64 column per `METRIC_KEYS` entry.
 
         Raises:
-            ValueError: If the draws break the protocol contract, as `require_draws` checks.
+            ValueError: If a forecast breaks the protocol contract, as `require_forecast` checks.
         """
-        for key, prefix_draws in draws:
-            self.require_draws(key, prefix_draws, num_samples=num_samples)
+        for key, forecast in forecasts:
+            self.require_forecast(key, forecast, num_samples=num_samples)
         batch = MetricInputs.of_batch(
-            [self._forecast(log, key, prefix_draws) for key, prefix_draws in draws],
+            [self._pairing(log, key, forecast) for key, forecast in forecasts],
             hard_checker=self.hard_checker,
             soft_checker=self.soft_checker,
             kernel=self.kernel,
@@ -186,16 +185,14 @@ class Scorer:
             dtype=np.float64,
         )
 
-    def _forecast(self, log: Log, key: PrefixKey, draws: Draws) -> Forecast:
-        """Join one prefix's draws with its prefix and observed suffix from `log`."""
+    def _pairing(self, log: Log, key: PrefixKey, forecast: Forecast) -> Pairing:
+        """Join one prefix's forecast with its prefix and observed suffix from `log`."""
         activities, minutes = log.suffix_trace(key)
-        return Forecast(
+        return Pairing(
             case_id=key[0],
             prefix_activities=self._known(log.prefix_activities(key)),
-            draws=draws,
-            observed=DecodedEvents(
-                activities=self._known(activities), inter_event_time_minutes=minutes
-            ),
+            forecast=forecast,
+            observed=Suffix(activities=self._known(activities), inter_event_time_minutes=minutes),
         )
 
     def _known(self, names: Iterable[str]) -> tuple[str, ...]:

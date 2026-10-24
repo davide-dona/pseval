@@ -9,8 +9,8 @@ from pseval.metrics.inputs import MetricInputs
 
 def activity(inputs: MetricInputs) -> dict[str, float]:
     """The activity columns of one inputs."""
-    forecast = inputs.forecast
-    draws, observed = forecast.draws.activities, (forecast.observed.activities,)
+    pairing = inputs.pairing
+    draws, observed = pairing.forecast.activities, (pairing.observed.activities,)
     dld_between = damerau_levenshtein_distances(draws, draws)  # [K, K]
     dld_to_observed = damerau_levenshtein_distances(draws, observed)[:, 0]  # [K]
     spread = mean_between_draws(dld_between)

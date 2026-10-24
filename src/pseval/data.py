@@ -1,4 +1,5 @@
-from collections.abc import Sequence
+import math
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from functools import cached_property
 
@@ -144,24 +145,99 @@ class PrefixBatch:
 
 
 @dataclass(frozen=True, eq=False)
-class SuffixDraws:
-    """A model's sampled suffixes for one prefix, in log units.
+class Suffix:
+    """A run of events after a prefix, in log units."""
 
-    Draw `i` is the activity names `activities[i]`, the inter-event minutes `minutes[i]` before
-    each of them, measured from the previous event and from the last prefix event for the first,
-    and whether the model closed it at the length cap without ending it, `truncated[i]`.
-    """
-
-    activities: Sequence[Sequence[str]]
-    minutes: Sequence[np.ndarray]
-    truncated: Sequence[bool]
-
-    def __post_init__(self) -> None:
-        if not len(self.activities) == len(self.minutes) == len(self.truncated):
-            raise ValueError('Suffix draws disagree on how many draws there are')
-        for names, minutes in zip(self.activities, self.minutes, strict=True):
-            if np.shape(minutes) != (len(names),):
-                raise ValueError('A draw needs one inter-event time per activity')
+    # [L] The activity name of each event.
+    activities: tuple[str, ...]
+    # [L] float64 minutes before each activity, from the previous event and, for the first, from
+    # the last prefix event.
+    inter_event_time_minutes: np.ndarray
 
     def __len__(self) -> int:
         return len(self.activities)
+
+    @property
+    def remaining_time_minutes(self) -> float:
+        """Minutes from the last prefix event to the end of the case, the times summed."""
+        return math.fsum(self.inter_event_time_minutes)
+
+
+@dataclass(frozen=True, eq=False)
+class Forecast:
+    """A model's drawn suffixes for one prefix, in log units, the draws' times packed in one array.
+
+    Models build it with `of`. Draw `i` holds the names `activities[i]`, its times
+    `inter_event_time_minutes[offsets[i]:offsets[i + 1]]`, and `truncated[i]`.
+    """
+
+    # [K] The activity names of each draw.
+    activities: tuple[tuple[str, ...], ...]
+    # [E] float64 inter-event minutes of every draw, draw after draw.
+    inter_event_time_minutes: np.ndarray
+    # [K] Whether each draw was closed at the length cap without ending.
+    truncated: np.ndarray
+
+    def __post_init__(self) -> None:
+        if len(self.truncated) != len(self.activities):
+            raise ValueError('A forecast needs one truncation flag per draw')
+        if len(self.inter_event_time_minutes) != self.offsets[-1]:
+            raise ValueError('A forecast needs one inter-event time per drawn activity')
+
+    @classmethod
+    def of(
+        cls,
+        activities: Sequence[Sequence[str]],
+        minutes: Sequence[np.ndarray],
+        truncated: Sequence[bool],
+    ) -> 'Forecast':
+        """Pack one prefix's draws.
+
+        Args:
+            activities: `[K]` the activity names of each draw.
+            minutes: `[K]` the inter-event minutes `[L]` before each activity of each draw.
+            truncated: `[K]` whether each draw was closed at the length cap without ending.
+
+        Raises:
+            ValueError: If the draws disagree on their count, or a draw's times on its length.
+        """
+        if len(minutes) != len(activities):
+            raise ValueError('A forecast needs inter-event times for every draw')
+        for names, times in zip(activities, minutes, strict=True):
+            if np.shape(times) != (len(names),):
+                raise ValueError('A draw needs one inter-event time per activity')
+        return cls(
+            activities=tuple(tuple(names) for names in activities),
+            inter_event_time_minutes=np.concatenate(
+                [np.zeros(0), *(np.asarray(times, dtype=np.float64) for times in minutes)]
+            ),
+            truncated=np.asarray(truncated, dtype=bool),
+        )
+
+    def __len__(self) -> int:
+        """How many draws were taken."""
+        return len(self.activities)
+
+    def __iter__(self) -> Iterator[Suffix]:
+        """Each draw's activities and times."""
+        times, offsets = self.inter_event_time_minutes, self.offsets
+        for draw, activities in enumerate(self.activities):
+            yield Suffix(activities, times[offsets[draw] : offsets[draw + 1]])
+
+    @cached_property
+    def lengths(self) -> np.ndarray:
+        """[K] How many events each draw holds."""
+        return np.fromiter(map(len, self.activities), np.int64, len(self))
+
+    @cached_property
+    def offsets(self) -> np.ndarray:
+        """[K + 1] Where each draw's times start in `inter_event_time_minutes`, then their end."""
+        return np.concatenate([np.zeros(1, np.int64), np.cumsum(self.lengths)])
+
+    @property
+    def remaining_time_minutes(self) -> np.ndarray:
+        """[K] Each draw's inter-event minutes summed in event order."""
+        draw_of_event = np.repeat(np.arange(len(self)), self.lengths)  # [E]
+        return np.bincount(
+            draw_of_event, weights=self.inter_event_time_minutes, minlength=len(self)
+        )
