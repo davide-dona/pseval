@@ -64,23 +64,20 @@ class Scorer:
             raise ValueError(f'The train split holds an activity named {UNK}')
         vocabulary = (*sorted(activities.unique().tolist()), UNK)
         traces = activities.groupby(events[CASE_KEY], sort=False).agg(list).tolist()
+        hard = mine(
+            traces,
+            min_support=declare_hard_min_support,
+            min_confidence=declare_hard_min_confidence,
+            max_cardinality=declare_max_cardinality,
+        )
+        soft = _mine_soft(traces, max_cardinality=declare_max_cardinality)
+        kernel = _fit_kernel(train, vocabulary=vocabulary)
         return cls(
             vocabulary=vocabulary,
             max_suffix_length=max_suffix_length,
-            hard=mine(
-                traces,
-                min_support=declare_hard_min_support,
-                min_confidence=declare_hard_min_confidence,
-                max_cardinality=declare_max_cardinality,
-            ),
-            # A support of one trace in the split keeps exactly the rules some trace witnesses.
-            soft=mine(
-                traces,
-                min_support=1.0 / len(traces),
-                min_confidence=0.0,
-                max_cardinality=declare_max_cardinality,
-            ),
-            kernel=_fit_kernel(train, alphabet=len(vocabulary)),
+            hard=hard,
+            soft=soft,
+            kernel=kernel,
         )
 
     def save(self, *, path: Path, hard: Path, soft: Path) -> None:
@@ -202,15 +199,29 @@ class Scorer:
         return tuple(name if name in self.axes else UNK for name in names)
 
 
-def _fit_kernel(train: Log, *, alphabet: int) -> SignatureKernel:
+def _mine_soft(traces: list[list[str]], *, max_cardinality: int) -> DeclareModel:
+    """Mine every rule some train trace witnesses, at confidence 0.
+
+    A support of one trace in the split keeps exactly the witnessed rules, whose non-vacuous
+    satisfaction the support score forecasts.
+    """
+    return mine(
+        traces,
+        min_support=1.0 / len(traces),
+        min_confidence=0.0,
+        max_cardinality=max_cardinality,
+    )
+
+
+def _fit_kernel(train: Log, *, vocabulary: tuple[str, ...]) -> SignatureKernel:
     """Calibrate the signature kernel on the longest suffix of every training case.
 
     A case's longest suffix follows its first event, since every prefix holds at least one event,
-    so its inter-event times are all measured from a real preceding event. The train activities,
-    sorted, take the first axes of the `alphabet`, in vocabulary order.
+    so its inter-event times are all measured from a real preceding event. Each activity takes
+    its vocabulary index as its axis.
     """
-    events = train.events
-    axes = events[ACTIVITY_KEY].astype(str).astype('category').cat.codes.to_numpy(np.int64)
+    index = {name: axis for axis, name in enumerate(vocabulary)}
+    axes = train.events[ACTIVITY_KEY].astype(str).map(index).to_numpy(np.int64)
     minutes = train.inter_event_minutes()
     suffixes = [(axes[a + 1 : b], minutes[a + 1 : b]) for a, b in pairwise(train.case_offsets)]
-    return SignatureKernel.fit(suffixes, alphabet=alphabet)
+    return SignatureKernel.fit(suffixes, alphabet=len(vocabulary))
