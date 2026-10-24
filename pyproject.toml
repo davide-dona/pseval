@@ -5,7 +5,7 @@ description = "Evaluation protocol for probabilistic suffix prediction in predic
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "declarray @ git+https://github.com/davide-dona/declarray@948f624733a3e3654a22a050d3e49a0eb4dbb625",
+    "declarray @ git+https://github.com/davide-dona/declarray@40e3d1bcac54f8fcf0e69ad5831ed38dd1f67111",
     "huggingface-hub>=1.27.0",
     "numpy>=2.5.1",
     "pandas>=3.0.5",

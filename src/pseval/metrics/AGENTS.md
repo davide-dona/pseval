@@ -27,8 +27,14 @@ belongs to `generation` and `scoring`. In shape comments, `K` counts a prefix's 
   that several columns use, and returns one expression per column in `PrefixScores` order.
 - `PROPER_SCORES` are the fair scoring rules models are ranked on, lower is better. Every other
   column is a diagnostic and never ranks.
-- `MetricInputs.of_batch` makes one Declare checker call and one signature kernel call per
-  batch, since both have a fixed cost per call. Score batches, not single prefixes.
+- `MetricInputs.of_batch` makes one call per Declare checker, hard and soft, and one signature
+  kernel call per batch, since each has a fixed cost per call. Score batches, not single
+  prefixes.
+- The hard Declare model is mined at the spec's thresholds and only decides full conformance.
+  The soft model holds every rule some train trace witnesses, hard rules included, at
+  confidence 0; the support score forecasts each rule's non-vacuous satisfaction per prefix.
+  Rules the prefix already decides are scored too: every draw agrees with the observation on
+  them, so their fair Brier score is exactly 0.
 - Compute CRPS and its spread from gaps between sorted draws with nonnegative weights. Never as
   accuracy minus spread, which cancels catastrophically under extreme draws.
 - Inter-event times have no metric of their own, since aligning draws by position to the observed

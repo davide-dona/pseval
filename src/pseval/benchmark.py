@@ -23,7 +23,8 @@ FILES = {
     'validation': 'validation.parquet',
     'test': 'test.parquet',
     'scorer': 'scorer.json',
-    'declare': 'declare.json',
+    'declare_hard': 'declare_hard.json',
+    'declare_soft': 'declare_soft.json',
 }
 
 # The splits, each holding the benchmark's record in its Parquet metadata.
@@ -62,7 +63,9 @@ class Benchmark:
         self._dataset = records[0].dataset
         self._digest = _directory_digest(directory)
         self._scorer = Scorer.load(
-            path=directory / FILES['scorer'], declare=directory / FILES['declare']
+            path=directory / FILES['scorer'],
+            hard=directory / FILES['declare_hard'],
+            soft=directory / FILES['declare_soft'],
         )
 
     @property

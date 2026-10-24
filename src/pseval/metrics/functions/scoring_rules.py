@@ -13,6 +13,22 @@ def energy_score(distances_between: np.ndarray, distances_to_observed: np.ndarra
     return float(distances_to_observed.mean()) - 0.5 * mean_between_draws(distances_between)
 
 
+def fair_brier(draws: np.ndarray, observed: np.ndarray) -> np.ndarray:
+    """Return the fair Brier score of each binary event, `(p - y)^2 - p (1 - p) / (K - 1)`, where
+    `p` is the share of draws in which it occurs. It equals the fair energy score under the 0/1
+    distance.
+
+    Args:
+        draws: `[K, E]` whether each event occurs in each of at least two draws.
+        observed: `[E]` whether each event occurs in the observation.
+
+    Returns:
+        `[E]` the score of each event.
+    """
+    share = draws.mean(axis=0)  # [E]
+    return (share - observed) ** 2 - share * (1.0 - share) / (len(draws) - 1.0)
+
+
 def mean_between_draws(distances_between: np.ndarray) -> float:
     """Return the mean distance over ordered pairs of different draws, `mean_{i!=j} d(x_i, x_j)`.
 

@@ -38,17 +38,24 @@ class MetricInputs:
     pit_noise: float
     # [K + 1, K + 1] normalized signature kernel between the draws and, last, the observed suffix.
     signature_gram: np.ndarray
-    # [K] Whether the prefix completed by each draw satisfies the Declare model.
+    # [K] Whether the prefix completed by each draw satisfies the hard Declare model.
     draw_full_conformance: np.ndarray
-    # Whether the prefix completed by its observed suffix satisfies the Declare model.
+    # Whether the prefix completed by its observed suffix satisfies the hard Declare model.
     observed_full_conformance: float
+    # [K + 1, R] Whether the prefix completed by each draw and, last, by the observed suffix
+    # witnesses each soft Declare rule.
+    soft_witnesses: np.ndarray
+    # [K + 1, A] Whether the prefix completed by each draw and, last, by the observed suffix
+    # holds each vocabulary activity, in axis order.
+    activity_presence: np.ndarray
 
     @classmethod
     def of_batch(
         cls,
         forecasts: Sequence[Forecast],
         *,
-        checker: Checker,
+        hard_checker: Checker,
+        soft_checker: Checker,
         kernel: SignatureKernel,
         axes: Mapping[str, int],
     ) -> list[Self]:
@@ -56,7 +63,8 @@ class MetricInputs:
 
         Args:
             forecasts: Decoded prefixes, drawn suffixes, and observed suffixes.
-            checker: Declare checker applied to each prefix completed by each of its suffixes.
+            hard_checker: Checks full conformance of each prefix completed by each suffix.
+            soft_checker: Checks which soft rules each prefix completed by each suffix witnesses.
             kernel: Signature kernel comparing the draws and observed suffix of each prefix.
             axes: Each activity name to its signature kernel axis.
 
@@ -65,7 +73,9 @@ class MetricInputs:
         """
         if not forecasts:
             return []
-        conformances = _full_conformances(forecasts, checker=checker)
+        traces = _completed_traces(forecasts)
+        conformances = _per_prefix(hard_checker.check(traces).full, forecasts)
+        witnesses = _per_prefix(soft_checker.witnesses(traces), forecasts)
         grams = kernel.grams(
             [
                 [kernel.embed(events, axes=axes) for events in _draws_then_observed(forecast)]
@@ -79,8 +89,12 @@ class MetricInputs:
                 signature_gram=gram,
                 draw_full_conformance=conformance[:-1],
                 observed_full_conformance=float(conformance[-1]),
+                soft_witnesses=soft_witnesses,
+                activity_presence=_activity_presence(forecast, axes=axes),
             )
-            for forecast, conformance, gram in zip(forecasts, conformances, grams, strict=True)
+            for forecast, conformance, soft_witnesses, gram in zip(
+                forecasts, conformances, witnesses, grams, strict=True
+            )
         ]
 
 
@@ -89,18 +103,29 @@ def _draws_then_observed(forecast: Forecast) -> list[DecodedEvents]:
     return [*forecast.draws, forecast.observed]
 
 
-def _full_conformances(forecasts: Sequence[Forecast], *, checker: Checker) -> list[np.ndarray]:
-    """`[K + 1]` per prefix: whether the prefix completed by each draw, then by its observed
-    suffix, satisfies the Declare model, from one checker call over the batch."""
-    full = checker.check(
-        [
-            forecast.prefix_activities + events.activities
-            for forecast in forecasts
-            for events in _draws_then_observed(forecast)
-        ]
-    ).full
+def _completed_traces(forecasts: Sequence[Forecast]) -> list[tuple[str, ...]]:
+    """Each prefix completed by each of its draws, then by its observed suffix, over the batch."""
+    return [
+        forecast.prefix_activities + events.activities
+        for forecast in forecasts
+        for events in _draws_then_observed(forecast)
+    ]
+
+
+def _per_prefix(values: np.ndarray, forecasts: Sequence[Forecast]) -> list[np.ndarray]:
+    """Split rows over the batch's completed traces into `[K + 1, ...]` rows per prefix."""
     sizes = [len(forecast.draws) + 1 for forecast in forecasts]
-    return np.split(full, np.cumsum(sizes)[:-1])
+    return np.split(values, np.cumsum(sizes)[:-1])
+
+
+def _activity_presence(forecast: Forecast, *, axes: Mapping[str, int]) -> np.ndarray:
+    """`[K + 1, A]` whether the prefix completed by each draw, then by its observed suffix,
+    holds each vocabulary activity."""
+    presence = np.zeros((len(forecast.draws) + 1, len(axes)), bool)
+    for row, events in enumerate(_draws_then_observed(forecast)):
+        presence[row, [axes[name] for name in events.activities]] = True
+    presence[:, [axes[name] for name in forecast.prefix_activities]] = True
+    return presence
 
 
 def _pit_noise(forecast: Forecast) -> float:

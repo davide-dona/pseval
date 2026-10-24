@@ -9,8 +9,8 @@ class DatasetSpec:
     fields name its case, activity, resource, and timestamp columns; `text_columns` names further
     columns read as text rather than parsed as numbers. The rest fixes the protocol: the
     out-of-time test fraction and the validation fraction drawn at random from the train cases
-    with `split_seed`, the percentiles of the outlier and late-start filters, and the Declare
-    mining thresholds.
+    with `split_seed`, the percentiles of the outlier and late-start filters, and the mining
+    thresholds of the hard Declare model.
     """
 
     name: str
@@ -32,8 +32,8 @@ class DatasetSpec:
     # Percentile of case duration, after the outlier filters, that a kept case must start at
     # least that long before the end of the log.
     min_observed_duration_percentile: float = 95.0
-    declare_min_support: float = 0.05
-    declare_min_confidence: float = 1.0
+    declare_hard_min_support: float = 0.05
+    declare_hard_min_confidence: float = 1.0
     declare_max_cardinality: int = 2
 
 
