@@ -1,0 +1,26 @@
+defaults:
+- dataset: ???
+- model: u_ed_transformer
+- training: default
+# A multirun first composes without its sweep values, leaving `dataset` missing. Falling back to
+# ??? makes Hydra skip the regime there too, instead of failing on the missing interpolation.
+- regime: ${oc.select:dataset,???}
+- _self_
+run_id: ${now:%Y%m%d-%H%M%S-%f}
+seed: 42
+device: cuda:0
+# A local root holding `<dataset>/`, instead of the Hub benchmark of the installed pseval.
+benchmark_root: null
+dataloader:
+  num_workers: 12
+wandb:
+  project: pseval-baselines
+  mode: online
+hydra:
+  run:
+    dir: outputs/train/${data.name}/${model.label}/${run_id}
+  sweep:
+    dir: outputs/train
+    subdir: ${data.name}/${model.label}/${run_id}
+  job:
+    chdir: false

@@ -1,0 +1,14 @@
+# @package _global_
+data:
+  name: bpic12
+  event_features:
+  - (case) AMOUNT_REQ
+  - ts_start
+  - day_sin
+  - day_cos
+  - seconds_sin
+  - seconds_cos
+  log_scaled_features:
+  - (case) AMOUNT_REQ
+  - ts_start
+  log_scaled_target_inter_event_time: false

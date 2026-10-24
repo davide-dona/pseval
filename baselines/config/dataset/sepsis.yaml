@@ -1,0 +1,40 @@
+# @package _global_
+data:
+  name: sepsis
+  event_features:
+  - DiagnosticArtAstrup
+  - DiagnosticBlood
+  - DiagnosticECG
+  - DiagnosticIC
+  - DiagnosticLacticAcid
+  - DiagnosticLiquor
+  - DiagnosticSputum
+  - DiagnosticUrinaryCulture
+  - DiagnosticUrinarySediment
+  - DiagnosticXthorax
+  - DisfuncOrg
+  - Hypotensie
+  - Hypoxie
+  - InfectionSuspected
+  - Infusion
+  - Oligurie
+  - SIRSCritHeartRate
+  - SIRSCritLeucos
+  - SIRSCritTachypnea
+  - SIRSCritTemperature
+  - SIRSCriteria2OrMore
+  - Age
+  - CRP
+  - LacticAcid
+  - Leucocytes
+  - ts_start
+  - day_sin
+  - day_cos
+  - seconds_sin
+  - seconds_cos
+  log_scaled_features:
+  - CRP
+  - LacticAcid
+  - Leucocytes
+  - ts_start
+  log_scaled_target_inter_event_time: false

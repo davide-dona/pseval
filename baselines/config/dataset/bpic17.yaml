@@ -1,0 +1,29 @@
+# @package _global_
+data:
+  name: bpic17
+  event_features:
+  - case:LoanGoal
+  - case:ApplicationType
+  - case:RequestedAmount
+  - Action
+  - EventOrigin
+  - lifecycle:transition
+  - FirstWithdrawalAmount
+  - NumberOfTerms
+  - Accepted
+  - MonthlyCost
+  - Selected
+  - CreditScore
+  - OfferedAmount
+  - ts_start
+  - day_sin
+  - day_cos
+  - seconds_sin
+  - seconds_cos
+  log_scaled_features:
+  - case:RequestedAmount
+  - FirstWithdrawalAmount
+  - MonthlyCost
+  - OfferedAmount
+  - ts_start
+  log_scaled_target_inter_event_time: false

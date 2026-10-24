@@ -1,0 +1,7 @@
+defaults:
+- u_ed_transformer
+- _self_
+label: plain_autoregressive
+# No logit variance and no dropout at generation: activities from the softmax, times from the
+# Gaussian head.
+uncertainty: null

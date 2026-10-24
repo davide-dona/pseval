@@ -1,0 +1,10 @@
+generations: ???
+# Scoring processes, pseval's default when null.
+workers: null
+benchmark_root: null
+invocation_id: ${now:%Y%m%d-%H%M%S-%f}
+hydra:
+  run:
+    dir: ${parent:${generations}}/score/${invocation_id}
+  job:
+    chdir: false
