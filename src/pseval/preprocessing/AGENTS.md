@@ -13,16 +13,20 @@ part of the model author's workflow, and the only code that writes benchmark fil
 | `pipeline.py` | Reading an original log by its spec and the full filter, sort, and split order. |
 | `build.py` | `build`, the only way to make a benchmark, and the reproducibility check `rebuild`. |
 
-The benchmark directory format, `FILES`, the `fingerprint`, and loading live in
+The benchmark directory format, `FILES`, its digest, and loading live in
 `pseval/benchmark.py`, which knows nothing of the specs.
 
 ## Benchmark Directory
 
 - A benchmark is one directory per dataset, named after it: the `FILES` (three Parquet splits,
   `scorer.json`, and `declare.json`) and `reference_scores.parquet`.
-- The fingerprint is computed from the `FILES` at load and is the identity every generations
-  and scores file carries. The reference scores sit outside it, since they are scored on the
-  benchmark; their provenance names the fingerprint, and `skill` requires it.
+- Every split stores the benchmark's `Record` in its metadata: the dataset and the original
+  log's digest. The splits must hold the same record, and `load_benchmark` requires its dataset
+  to be the directory's name.
+- The digest is computed from the `FILES` at load and is the input every generations and
+  scores record names. The reference scores sit outside it, since they are scored on the
+  benchmark; their record names the digest, and `skill` requires it. Their generations are
+  not kept, so the generations digest they record cannot be checked.
 - A benchmark is never patched. Any change, a spec field, a metric, or a filter, means
   rebuilding every benchmark with `build`, which also invalidates every scores file.
 - `train` and `validation` are public. The test split stays private: `Benchmark._test` is read

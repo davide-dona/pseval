@@ -7,8 +7,8 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from pseval.generation.provenance import Provenance
 from pseval.metrics import METRIC_KEYS
+from pseval.record import Record
 from pseval.scoring.summary import Summary, summarize
 
 # The scores file: one row per test prefix, every metric a column.
@@ -32,14 +32,14 @@ class ScoresWriter:
     readable.
     """
 
-    def __init__(self, path: Path, provenance: Provenance) -> None:
+    def __init__(self, path: Path, record: Record) -> None:
         """
         Args:
             path: Destination file, replaced if it exists.
-            provenance: The provenance of the scored generations, naming their file.
+            record: The model, the benchmark, and the generations file that were scored.
         """
         self._path = path
-        self._writer = pq.ParquetWriter(where=path, schema=provenance.attach_to_schema(SCHEMA))
+        self._writer = pq.ParquetWriter(where=path, schema=record.attach_to(SCHEMA))
         self._buffered: list[pd.DataFrame] = []
 
     def __enter__(self) -> Self:
@@ -78,10 +78,10 @@ class ScoresWriter:
 
 @dataclass(frozen=True, eq=False)
 class Scores:
-    """A scores file: one row per test prefix, and its provenance."""
+    """A scores file: one row per test prefix, and its record."""
 
     frame: pd.DataFrame
-    provenance: Provenance
+    record: Record
 
     def summary(self) -> Summary:
         """Equal-weight means overall, by prefix length, and by true suffix length."""
@@ -97,6 +97,6 @@ def read_scores(path: Path) -> Scores:
     with pq.ParquetFile(path) as parquet:
         if not parquet.schema_arrow.remove_metadata().equals(SCHEMA):
             raise ValueError(f'{path} does not have the scores schema of this pseval version')
-        provenance = Provenance.from_parquet(parquet)
+        record = Record.from_schema(parquet.schema_arrow)
         frame = parquet.read().to_pandas()
-    return Scores(frame=frame, provenance=provenance)
+    return Scores(frame=frame, record=record)

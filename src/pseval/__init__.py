@@ -1,7 +1,6 @@
 from pseval.benchmark import Benchmark, load_benchmark
 from pseval.data import Log, PrefixBatch, PrefixKey, SuffixDraws
 from pseval.generation.generate import generate
-from pseval.generation.provenance import Selection
 from pseval.model import SuffixModel
 from pseval.scoring.score import score
 from pseval.scoring.skill import skill
@@ -15,7 +14,6 @@ __all__ = [
     'PrefixBatch',
     'PrefixKey',
     'Scores',
-    'Selection',
     'SuffixDraws',
     'SuffixModel',
     'Summary',

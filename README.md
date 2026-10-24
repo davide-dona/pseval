@@ -20,7 +20,6 @@ generations = pseval.generate(
     model,
     benchmark,
     directory / 'generations.parquet',
-    selection=pseval.Selection(metric='signature_kernel_score', procedure='best of 5 seeds'),
     label='mine',
 )
 scores = pseval.read_scores(pseval.score(generations, benchmark))

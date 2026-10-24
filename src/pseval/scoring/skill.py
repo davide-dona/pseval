@@ -22,7 +22,7 @@ def skill(scores: Scores, benchmark: Benchmark) -> dict[str, float]:
     """
     reference = read_scores(benchmark._reference_scores())
     for scored in (scores, reference):
-        scored.provenance.require_benchmark(benchmark.dataset, benchmark.fingerprint)
+        scored.record.require_input('benchmark', benchmark.digest)
     keys = ['case_id', 'prefix_len']
     if not (
         scores.frame[keys]

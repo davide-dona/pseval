@@ -11,7 +11,6 @@ the only artifact a model contributes to its scores.
 | `join.py` | Validating a model's `SuffixDraws` and joining them with the observed prefix and suffix. |
 | `records.py` | `DecodedEvents`, the `Draws` of one prefix, and `Generation`. |
 | `store.py` | The generations Parquet schema, `GenerationWriter`, and the `Generations` reader. |
-| `provenance.py` | `Selection` and `Provenance`, stored in the metadata of generations and scores files. |
 
 ## Contracts
 
@@ -23,6 +22,9 @@ the only artifact a model contributes to its scores.
   minutes.
   Observed activities unseen in train are named `UNK`; a drawn one is an error.
 - The file holds one row per prefix: the key and, per draw, its activity names, dictionary
-  encoded, float32 minutes, and truncation flag. `Provenance` lives in the schema metadata. Prefixes and observed suffixes are not stored; scoring reads them from the benchmark.
+  encoded, float32 minutes, and truncation flag. Its `Record`, in the schema metadata, names
+  the dataset, the model label, and the benchmark digest. The draw count is not stored: it is
+  read from the draws. Prefixes and observed suffixes are not stored; scoring reads them from
+  the benchmark.
 - `GenerationWriter` writes one row group per batch, and scoring parallelizes over row groups. A
   failure inside the writer removes the file.

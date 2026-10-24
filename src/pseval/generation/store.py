@@ -10,8 +10,8 @@ import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 from pseval.data import PrefixKey
-from pseval.generation.provenance import Provenance
 from pseval.generation.records import Draws, Generation
+from pseval.record import Record
 
 # Activity names, one per event, dictionary encoded on disk.
 _ACTIVITIES = pa.list_(pa.field(name='element', type=pa.string()))
@@ -45,6 +45,7 @@ SCHEMA = pa.schema(
 _KEY_COLUMNS = ['case_id', 'prefix_len']
 _NAME_LEAVES = ['generated_draws.list.element.activities.list.element']
 _FLOAT_LEAVES = ['generated_draws.list.element.inter_event_time_minutes.list.element']
+_TRUNCATED_LEAF = 'generated_draws.list.element.truncated'
 
 
 def _row(generation: Generation) -> dict:
@@ -108,16 +109,16 @@ class GenerationWriter:
     block removes the file, so an interrupted generation leaves nothing readable.
     """
 
-    def __init__(self, path: Path, provenance: Provenance) -> None:
+    def __init__(self, path: Path, record: Record) -> None:
         """
         Args:
             path: Destination file, replaced if it exists.
-            provenance: The benchmark, model, and selection that produced the generations.
+            record: The model and the benchmark that produced the generations.
         """
         self._path = path
         self._writer = pq.ParquetWriter(
             where=path,
-            schema=provenance.attach_to_schema(SCHEMA),
+            schema=record.attach_to(SCHEMA),
             compression='zstd',
             compression_level=9,
             use_dictionary=_NAME_LEAVES,
@@ -157,13 +158,13 @@ class Generations:
     def __init__(self, path: Path) -> None:
         """
         Raises:
-            ValueError: If the schema differs or the provenance is missing.
+            ValueError: If the schema differs or the record is missing.
         """
         self._parquet = pq.ParquetFile(path)
         try:
             if not self._parquet.schema_arrow.remove_metadata().equals(SCHEMA):
                 raise ValueError(f'{path} does not have the generations schema of pseval')
-            self._provenance = Provenance.from_parquet(self._parquet)
+            self._record = Record.from_schema(self._parquet.schema_arrow)
         except Exception:
             self._parquet.close()
             raise
@@ -180,8 +181,8 @@ class Generations:
         self._parquet.close()
 
     @property
-    def provenance(self) -> Provenance:
-        return self._provenance
+    def record(self) -> Record:
+        return self._record
 
     @property
     def blocks(self) -> int:
@@ -203,6 +204,18 @@ class Generations:
                 strict=True,
             )
         )
+
+    def num_samples(self) -> int:
+        """The draw count every prefix shares, read from the truncation flags only.
+
+        Raises:
+            ValueError: If the prefixes hold different draw counts.
+        """
+        table = self._parquet.read(columns=[_TRUNCATED_LEAF])
+        counts = pc.unique(pc.list_value_length(table.column('generated_draws'))).to_pylist()
+        if len(counts) != 1:
+            raise ValueError(f'The prefixes hold different draw counts: {sorted(counts)}')
+        return counts[0]
 
     def block(self, block: int) -> list[tuple[PrefixKey, Draws]]:
         """Decode one row group: each prefix's key and draws, in file order."""

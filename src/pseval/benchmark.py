@@ -6,15 +6,18 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from pseval.data import CASE_KEY, Log
 from pseval.metrics.scorer import Scorer
+from pseval.record import Record, digest
 
 # The Hugging Face dataset repository holding the published benchmarks, one directory per dataset
 # and one tag per pseval release.
 HUB_REPOSITORY = '446f6e6e79/pseval'
 
-# The files of a benchmark directory, by name. The fingerprint covers exactly these.
+# The files of a benchmark directory, by name. The benchmark digest covers exactly these.
 FILES = {
     'train': 'train.parquet',
     'validation': 'validation.parquet',
@@ -23,8 +26,11 @@ FILES = {
     'declare': 'declare.json',
 }
 
-# The scores of the unconditional reference. Outside the fingerprint, since they are scored on
-# the benchmark and carry its fingerprint in their provenance.
+# The splits, each holding the benchmark's record in its Parquet metadata.
+SPLITS = ('train', 'validation', 'test')
+
+# The scores of the unconditional reference. Outside the digest, since they are scored on the
+# benchmark and name its digest in their record.
 REFERENCE_SCORES = 'reference_scores.parquet'
 
 # The first cut of each case, a column of the test split only. It is 1 except on the test cases
@@ -44,10 +50,17 @@ class Benchmark:
     def __init__(self, directory: Path) -> None:
         """
         Args:
-            directory: The benchmark directory, named after its dataset.
+            directory: The benchmark directory.
+
+        Raises:
+            ValueError: If the splits hold different records.
         """
+        records = [Record.from_schema(pq.read_schema(directory / FILES[s])) for s in SPLITS]
+        if any(record != records[0] for record in records):
+            raise ValueError(f'The splits under {directory} hold different records')
         self._directory = directory
-        self._fingerprint = fingerprint(directory)
+        self._dataset = records[0].dataset
+        self._digest = _directory_digest(directory)
         self._scorer = Scorer.load(
             path=directory / FILES['scorer'], declare=directory / FILES['declare']
         )
@@ -58,11 +71,12 @@ class Benchmark:
 
     @property
     def dataset(self) -> str:
-        return self._directory.name
+        return self._dataset
 
     @property
-    def fingerprint(self) -> str:
-        return self._fingerprint
+    def digest(self) -> str:
+        """The identity every generations and scores file of this benchmark names."""
+        return self._digest
 
     @property
     def vocabulary(self) -> tuple[str, ...]:
@@ -99,10 +113,10 @@ class Benchmark:
         return self._directory / REFERENCE_SCORES
 
 
-def fingerprint(directory: Path) -> str:
-    """Return the identity of a benchmark directory: one hash over the hashes of its `FILES`."""
-    hashes = {name: sha256(directory / file) for name, file in FILES.items()}
-    return hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()
+def _directory_digest(directory: Path) -> str:
+    """Return the digest of a benchmark directory: the SHA-256 of the digests of its `FILES`."""
+    digests = {name: digest(directory / file) for name, file in FILES.items()}
+    return hashlib.sha256(json.dumps(digests, sort_keys=True).encode()).hexdigest()
 
 
 def load_benchmark(dataset: str, *, root: Path | None = None) -> Benchmark:
@@ -114,7 +128,7 @@ def load_benchmark(dataset: str, *, root: Path | None = None) -> Benchmark:
             pseval release from the Hugging Face Hub into its cache.
 
     Raises:
-        ValueError: If the root holds no benchmark of that dataset.
+        ValueError: If the root holds no benchmark of that dataset under its name.
     """
     if root is None:
         from huggingface_hub import snapshot_download
@@ -129,20 +143,27 @@ def load_benchmark(dataset: str, *, root: Path | None = None) -> Benchmark:
         )
     if not (root / dataset).is_dir():
         raise ValueError(f'No {dataset!r} benchmark under {root}')
-    return Benchmark(root / dataset)
+    benchmark = Benchmark(root / dataset)
+    if benchmark.dataset != dataset:
+        raise ValueError(f'{root / dataset} holds the {benchmark.dataset!r} benchmark')
+    return benchmark
 
 
-def write_split(events: pd.DataFrame, path: Path, *, first_cuts: pd.Series | None = None) -> None:
+def write_split(
+    events: pd.DataFrame, path: Path, record: Record, *, first_cuts: pd.Series | None = None
+) -> None:
     """Write one split of a benchmark.
 
     Args:
         events: The split's events, each case's rows consecutive and in time order.
         path: Destination file.
+        record: The benchmark's record, stored in the split's metadata.
         first_cuts: The first cut of every case, indexed by case, stored for the test split.
     """
     if first_cuts is not None:
         events = events.assign(**{PREFIX_START_KEY: events[CASE_KEY].map(first_cuts)})
-    events.to_parquet(path, index=False)
+    table = pa.Table.from_pandas(events, preserve_index=False)
+    pq.write_table(table.cast(record.attach_to(table.schema)), path)
 
 
 def read_split(path: Path) -> Log:
@@ -153,9 +174,3 @@ def read_split(path: Path) -> Log:
     first_rows = events[CASE_KEY].ne(events[CASE_KEY].shift()).to_numpy()
     prefix_starts = events.loc[first_rows, PREFIX_START_KEY].to_numpy(np.int64)
     return Log(events.drop(columns=PREFIX_START_KEY), prefix_starts=prefix_starts)
-
-
-def sha256(path: Path) -> str:
-    """Return the SHA-256 digest of a file's bytes."""
-    with path.open('rb') as file:
-        return hashlib.file_digest(file, 'sha256').hexdigest()
