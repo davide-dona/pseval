@@ -288,7 +288,7 @@ wheels = [
 [[package]]
 name = "declarray"
 version = "0.1.0"
-source = { git = "https://github.com/davide-dona/declarray?rev=40e3d1bcac54f8fcf0e69ad5831ed38dd1f67111#40e3d1bcac54f8fcf0e69ad5831ed38dd1f67111" }
+source = { git = "https://github.com/davide-dona/declarray?rev=b4d88d7601827835993042a210bc41e9d0f105ac#b4d88d7601827835993042a210bc41e9d0f105ac" }
 dependencies = [
     { name = "numpy" },
 ]
@@ -1107,7 +1107,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "declarray", git = "https://github.com/davide-dona/declarray?rev=40e3d1bcac54f8fcf0e69ad5831ed38dd1f67111" },
+    { name = "declarray", git = "https://github.com/davide-dona/declarray?rev=b4d88d7601827835993042a210bc41e9d0f105ac" },
     { name = "huggingface-hub", specifier = ">=1.27.0" },
     { name = "numpy", specifier = ">=2.5.1" },
     { name = "pandas", specifier = ">=3.0.5" },

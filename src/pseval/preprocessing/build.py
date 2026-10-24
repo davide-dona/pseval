@@ -22,7 +22,7 @@ def build(
         original: The original log.
         root: The local root; the benchmark is written to `root/<dataset>/`, the layout
             `load_benchmark(dataset, root=root)` reads.
-        workers: Scoring processes for the reference, one per CPU when None.
+        workers: Scoring processes for the reference, as `score` defaults them when None.
 
     Raises:
         FileExistsError: If `root/<dataset>/` exists.
