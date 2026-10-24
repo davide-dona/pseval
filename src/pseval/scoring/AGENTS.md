@@ -19,9 +19,10 @@ to the numbers a paper reports. It also scores validation prefixes in memory for
 - `score` rejects a generations file from another benchmark digest, not answering every test
   cut exactly once, or holding different draw counts across prefixes. `Scorer.score` checks each prefix's draws
   again, including their names against the vocabulary, since the file may come from outside `generate`.
-- Workers are spawned, not forked, so each opens its own CUDA context. Each worker opens its own
-  generations file, test split, and scorer, gets `1 / processes` of the GPU memory, and scores one
-  row group per task. Results are written in file order.
+- Workers are spawned, not forked, so each opens its own CUDA context. `score` reads the test
+  split once and sends it with the scorer to every worker, which opens its own generations file,
+  gets `1 / processes` of the GPU memory, and scores one row group per task. Without `workers`,
+  one process per CPU starts, at most `MAX_DEFAULT_WORKERS`. Results are written in file order.
 - The scores file stores `case_id`, `prefix_len`, `suffix_len`, then `METRIC_KEYS` as float64,
   and a `Record` with the generations' label and the digests of the benchmark and the
   generations file. `read_scores` rejects any other schema.

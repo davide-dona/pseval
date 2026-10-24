@@ -1,6 +1,5 @@
 import multiprocessing
 import os
-from collections.abc import Iterator
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +14,10 @@ from pseval.generation.store import Generations
 from pseval.metrics.scorer import Scorer
 from pseval.record import Record, digest
 from pseval.scoring.store import ScoresWriter
+
+# The most scoring processes started when none are asked for. Each opens its own CUDA context on
+# the shared device and gets an equal share of its memory.
+MAX_DEFAULT_WORKERS = 8
 
 
 @dataclass(frozen=True)
@@ -31,16 +34,14 @@ class _Worker:
 _worker: _Worker
 
 
-def _init_worker(generations: Path, num_samples: int, directory: Path, processes: int) -> None:
+def _init_worker(
+    generations: Path, num_samples: int, test: Log, scorer: Scorer, processes: int
+) -> None:
     global _worker
-    # Each process caches device memory its peers cannot reclaim, so each gets an equal share.
+    # Set a limit on the GPU memory fraction per process, to avoid OOM errors
     torch.cuda.set_per_process_memory_fraction(1 / processes)
-    benchmark = Benchmark(directory)
     _worker = _Worker(
-        generations=Generations(generations),
-        num_samples=num_samples,
-        test=benchmark._test(),
-        scorer=benchmark.scorer,
+        generations=Generations(generations), num_samples=num_samples, test=test, scorer=scorer
     )
 
 
@@ -56,22 +57,6 @@ def _score_block(block: int) -> pd.DataFrame:
     )
     scores = _worker.scorer.score(test, draws, num_samples=_worker.num_samples)
     return pd.concat([keys, scores], axis=1)
-
-
-def _scored_blocks(
-    generations: Path, benchmark: Benchmark, *, num_samples: int, blocks: int, processes: int
-) -> Iterator[pd.DataFrame]:
-    """Score every row group across spawned processes, yielding them in file order.
-
-    Spawned rather than forked, so each process can open its own CUDA context.
-    """
-    with ProcessPoolExecutor(
-        max_workers=processes,
-        mp_context=multiprocessing.get_context('spawn'),
-        initializer=_init_worker,
-        initargs=(generations, num_samples, benchmark.directory, processes),
-    ) as executor:
-        yield from executor.map(_score_block, range(blocks))
 
 
 def score(
@@ -93,7 +78,7 @@ def score(
         benchmark: The benchmark it was generated on.
         path: Destination, `scores.parquet` beside the generations by default, replaced if it
             exists.
-        workers: Scoring processes, one per CPU when None.
+        workers: Scoring processes, one per CPU up to `MAX_DEFAULT_WORKERS` when None.
 
     Returns:
         The scores file.
@@ -108,21 +93,27 @@ def score(
         label, blocks, prefixes = file.record.label, file.blocks, file.prefixes
         keys = file.prefix_keys()
         num_samples = file.num_samples()
-    if len(set(keys)) != len(keys) or set(keys) != set(benchmark._test().cuts()):
+    test = benchmark._test()
+    if len(set(keys)) != len(keys) or set(keys) != set(test.cuts()):
         raise ValueError('The generations must answer every test prefix exactly once')
     record = Record(
         dataset=benchmark.dataset,
         label=label,
         inputs={'benchmark': benchmark.digest, 'generations': digest(generations)},
     )
-    processes = workers if workers is not None else os.cpu_count() or 1
+    processes = workers if workers is not None else min(os.cpu_count() or 1, MAX_DEFAULT_WORKERS)
     with (
         ScoresWriter(path, record) as writer,
         tqdm(total=prefixes, desc='Scoring', unit='prefix') as progress,
+        # Spawned rather than forked, so each process can open its own CUDA context
+        ProcessPoolExecutor(
+            max_workers=processes,
+            mp_context=multiprocessing.get_context('spawn'),
+            initializer=_init_worker,
+            initargs=(generations, num_samples, test, benchmark.scorer, processes),
+        ) as executor,
     ):
-        for block in _scored_blocks(
-            generations, benchmark, num_samples=num_samples, blocks=blocks, processes=processes
-        ):
+        for block in executor.map(_score_block, range(blocks)):
             writer.write(block)
             progress.update(len(block))
     return path
