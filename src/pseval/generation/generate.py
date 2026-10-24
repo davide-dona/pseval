@@ -3,9 +3,8 @@ from pathlib import Path
 from tqdm import tqdm
 
 from pseval.benchmark import Benchmark
-from pseval.generation.join import join_draws
 from pseval.generation.store import GenerationWriter
-from pseval.model import SuffixModel, batch_seed
+from pseval.model import SuffixModel, batch_seed, draw
 from pseval.record import Record
 
 
@@ -20,11 +19,6 @@ def generate(
     batch_size: int = 256,
 ) -> Path:
     """Draw suffixes for every test prefix and write the generations file.
-
-    The test cuts are built here, and the model receives only their observed events through
-    `sample`; the observed suffixes are joined after sampling. Prefixes are batched by ascending
-    prefix length, each batch with its own seed derived from `seed`, so the batch size changes
-    nothing but which seed a prefix's draws come from.
 
     Args:
         model: The trained model.
@@ -42,24 +36,22 @@ def generate(
         ValueError: If the draws break the protocol contract, which also asks for at least two
             draws per prefix. The file is removed.
     """
+    # Retrieve the test set and sort by prefix length
     test = benchmark._test()
     keys = sorted(test.cuts(), key=lambda key: key[1])
+    # Build the record of the generation file
     record = Record(dataset=benchmark.dataset, label=label, inputs={'benchmark': benchmark.digest})
     scorer = benchmark.scorer
+
+    # Batched writing of the generations
     with GenerationWriter(path, record) as writer:
         starts = range(0, len(keys), batch_size)
         for batch, start in enumerate(tqdm(starts, desc='Generating', unit='batch')):
             batch_keys = keys[start : start + batch_size]
-            draws = model.sample(
-                test.prefixes(batch_keys), num_samples, seed=batch_seed(seed, batch)
+            draws = draw(
+                model, test.prefixes(batch_keys), num_samples, seed=batch_seed(seed, batch)
             )
-            writer.write(
-                join_draws(
-                    test,
-                    batch_keys,
-                    draws,
-                    scorer=scorer,
-                    num_samples=num_samples,
-                )
-            )
+            for key, prefix_draws in zip(batch_keys, draws, strict=True):
+                scorer.require_draws(key, prefix_draws, num_samples=num_samples)
+            writer.write(list(zip(batch_keys, draws, strict=True)))
     return path

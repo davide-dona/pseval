@@ -11,7 +11,6 @@ from tqdm import tqdm
 
 from pseval.benchmark import Benchmark
 from pseval.data import Log
-from pseval.generation.join import observe
 from pseval.generation.store import Generations
 from pseval.metrics.scorer import Scorer
 from pseval.record import Record, digest
@@ -47,21 +46,16 @@ def _init_worker(generations: Path, num_samples: int, directory: Path, processes
 
 def _score_block(block: int) -> pd.DataFrame:
     """Validate and score one row group, one scores row per prefix."""
-    scorer = _worker.scorer
-    generations = [
-        observe(_worker.test, key, draws, vocabulary=scorer.axes.keys())
-        for key, draws in _worker.generations.block(block)
-    ]
-    for generation in generations:
-        scorer.require_draws(generation, num_samples=_worker.num_samples)
+    test, draws = _worker.test, _worker.generations.block(block)
     keys = pd.DataFrame(
         {
-            'case_id': [generation.case_id for generation in generations],
-            'prefix_len': [generation.prefix_len for generation in generations],
-            'suffix_len': [len(generation.observed) for generation in generations],
+            'case_id': [case_id for (case_id, _), _ in draws],
+            'prefix_len': [prefix_len for (_, prefix_len), _ in draws],
+            'suffix_len': [len(test.suffix_trace(key)[0]) for key, _ in draws],
         }
     )
-    return pd.concat([keys, scorer.score(generations)], axis=1)
+    scores = _worker.scorer.score(test, draws, num_samples=_worker.num_samples)
+    return pd.concat([keys, scores], axis=1)
 
 
 def _scored_blocks(

@@ -1,7 +1,8 @@
 # Metrics Guide
 
 Metrics score each forecast of a given prefix, represented by its draws, against the single
-observed suffix. `Scorer` scores batches of `Generation` records in memory; file handling
+observed suffix. `Scorer` scores batches of a split's prefixes and their `Draws` in memory, joining
+each with its prefix and observed suffix as a `Forecast`; file handling
 belongs to `generation` and `scoring`. In shape comments, `K` counts a prefix's draws.
 
 ## Layout
@@ -10,7 +11,7 @@ belongs to `generation` and `scoring`. In shape comments, `K` counts a prefix's 
 | --- | --- |
 | `scorer.py` | `Scorer`: fit, save, load, `require_draws`, and batch scoring. |
 | `columns.py` | `PrefixScores`, `METRIC_KEYS`, and `PROPER_SCORES`. |
-| `inputs.py` | `MetricInputs`: a generation and the values its metrics share, built per batch. |
+| `inputs.py` | `Forecast`, and `MetricInputs`: a forecast and the values its metrics share. |
 | `definitions/` | One function per metric group, mapping `MetricInputs` to its columns. |
 | `functions/` | Pure numeric helpers: scoring rules, randomized PIT, and sequence distances. |
 | `signature.py` | `SignatureKernel`: path embedding, train calibration, and batched Gram matrices. |
@@ -20,8 +21,8 @@ belongs to `generation` and `scoring`. In shape comments, `K` counts a prefix's 
 - `PrefixScores` field order is the scores file column order. Adding a metric means a field there,
   commented only when its name leaves its meaning ambiguous, and an entry in one `definitions/`
   function; it changes the scores schema, so older scores files stop loading.
-- `Scorer.require_draws` admits only prefixes with at least two draws, so neither definitions nor
-  helpers guard smaller draw counts.
+- `Scorer.score` checks every prefix with `Scorer.require_draws`, which admits only prefixes with
+  at least two draws, so neither definitions nor helpers guard smaller draw counts.
 - A `definitions/` function unpacks its inputs and converts units at the top, names only values
   that several columns use, and returns one expression per column in `PrefixScores` order.
 - `PROPER_SCORES` are the fair scoring rules models are ranked on, lower is better. Every other

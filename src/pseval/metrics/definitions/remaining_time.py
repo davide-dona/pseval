@@ -8,9 +8,9 @@ MINUTES_PER_DAY = 1440.0
 
 def remaining_time(inputs: MetricInputs) -> dict[str, float]:
     """The remaining-time columns of one inputs."""
-    generation = inputs.generation
-    days = generation.draws.remaining_time_minutes / MINUTES_PER_DAY  # [K]
-    observed_days = generation.observed.remaining_time_minutes / MINUTES_PER_DAY
+    forecast = inputs.forecast
+    days = forecast.draws.remaining_time_minutes / MINUTES_PER_DAY  # [K]
+    observed_days = forecast.observed.remaining_time_minutes / MINUTES_PER_DAY
     return {
         'remaining_time_crps_days': crps(days, observed_days),
         'remaining_time_crps_error_days': mae(days, observed_days),

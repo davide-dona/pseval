@@ -1,8 +1,7 @@
 import pandas as pd
 
 from pseval.benchmark import Benchmark
-from pseval.generation.join import join_draws
-from pseval.model import SuffixModel, batch_seed
+from pseval.model import SuffixModel, batch_seed, draw
 from pseval.scoring.summary import means
 
 
@@ -41,8 +40,8 @@ def validate(
     for batch, start in enumerate(range(0, len(cuts), batch_size)):
         batch_keys = cuts[start : start + batch_size]
         # Draw the suffixes from the model, then score them
-        draws = model.sample(log.prefixes(batch_keys), num_samples, seed=batch_seed(seed, batch))
+        draws = draw(model, log.prefixes(batch_keys), num_samples, seed=batch_seed(seed, batch))
         scores.append(
-            scorer.score(join_draws(log, batch_keys, draws, scorer=scorer, num_samples=num_samples))
+            scorer.score(log, list(zip(batch_keys, draws, strict=True)), num_samples=num_samples)
         )
     return means(pd.concat(scores, ignore_index=True)).to_dict()

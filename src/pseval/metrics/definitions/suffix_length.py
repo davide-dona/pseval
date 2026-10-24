@@ -6,9 +6,9 @@ from pseval.metrics.inputs import MetricInputs
 
 def suffix_length(inputs: MetricInputs) -> dict[str, float]:
     """The suffix length columns of one inputs."""
-    draws = inputs.generation.draws
+    draws = inputs.forecast.draws
     lengths = draws.lengths.astype(np.float64)  # [K]
-    observed_length = float(len(inputs.generation.observed))
+    observed_length = float(len(inputs.forecast.observed))
     return {
         'suffix_length_crps': crps(lengths, observed_length),
         'suffix_length_crps_error': mae(lengths, observed_length),
