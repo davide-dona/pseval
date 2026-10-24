@@ -7,7 +7,7 @@ from torch import nn
 
 from baselines.data.dataset import Events
 from baselines.models.dropout import SequenceDropout
-from baselines.models.embeddings import EventContentEmbedding, position_table
+from baselines.models.embeddings import EmbeddingInput, EventContentEmbedding, position_table
 
 
 @dataclass(frozen=True)
@@ -20,6 +20,10 @@ class ProjectedKeysValues:
 
     keys: torch.Tensor  # [B, H, S, Dh]
     values: torch.Tensor  # [B, H, S, Dh]
+
+    def select(self, index: torch.Tensor) -> 'ProjectedKeysValues':
+        """Keep the rows at `index` `[B']`."""
+        return ProjectedKeysValues(keys=self.keys[index], values=self.values[index])
 
 
 class MultiHeadAttention(nn.Module):
@@ -132,33 +136,19 @@ class EncoderLayer(nn.Module):
 
 
 @dataclass(frozen=True)
-class SuffixCache:
-    """The suffix self-attention's key/value cache, preallocated to its final length and filled
-    one decoding step at a time, in place, so a step's cost does not grow with the steps taken."""
-
-    keys: torch.Tensor  # [B, H, max_steps, Dh]
-    values: torch.Tensor  # [B, H, max_steps, Dh]
-    length: int = 0
-
-    def write(self, step: ProjectedKeysValues) -> 'SuffixCache':
-        """Write one step's projection `[B, H, 1, Dh]` into the next free position."""
-        self.keys[:, :, self.length : self.length + 1] = step.keys
-        self.values[:, :, self.length : self.length + 1] = step.values
-        return SuffixCache(keys=self.keys, values=self.values, length=self.length + 1)
-
-    def filled(self) -> ProjectedKeysValues:
-        """The positions written so far, as a view over the buffer."""
-        return ProjectedKeysValues(
-            keys=self.keys[:, :, : self.length], values=self.values[:, :, : self.length]
-        )
-
-
-@dataclass(frozen=True)
 class LayerCache:
-    """One decoder layer's cache: the projected prefix and the suffix positions already read."""
+    """One decoder layer's generation cache: the projected prefix, and the suffix keys and values
+    preallocated to the most steps and written one position at a time, in place, so a step's cost
+    does not grow with the steps taken."""
 
-    prefix_kv: ProjectedKeysValues
-    suffix_kv: SuffixCache
+    prefix_kv: ProjectedKeysValues  # [B, H, P, Dh]
+    suffix_kv: ProjectedKeysValues  # [B, H, max_steps, Dh]
+
+    def select(self, index: torch.Tensor) -> 'LayerCache':
+        """Keep the rows at `index` `[B']`."""
+        return LayerCache(
+            prefix_kv=self.prefix_kv.select(index), suffix_kv=self.suffix_kv.select(index)
+        )
 
 
 class DecoderLayer(nn.Module):
@@ -178,43 +168,33 @@ class DecoderLayer(nn.Module):
         self.cross_attention_dropout = SequenceDropout(p=dropout, shape=(d_model,))
         self.feedforward_dropout = SequenceDropout(p=dropout, shape=(d_model,))
 
-    def forward(
-        self,
-        hidden: torch.Tensor,
-        *,
-        prefix: 'EncodedPrefix',
-        cache: LayerCache | None,
-    ) -> tuple[torch.Tensor, LayerCache]:
-        """Run one layer over suffix positions `[B, T, D]`: the whole suffix without a cache, the
-        one position that follows it with one.
-
-        Returns:
-            The layer's output for the positions read, and the cache to hand the next call.
-        """
+    def forward(self, hidden: torch.Tensor, *, prefix: 'EncodedPrefix') -> torch.Tensor:
+        """Run one layer over every suffix position `[B, T, D]` under a causal mask."""
         normed = self.self_attention_norm(hidden)
-        step_kv = self.self_attention.project(normed)
-        if cache is not None:
-            suffix_cache = cache.suffix_kv.write(step_kv)
-            suffix_kv = suffix_cache.filled()
-        else:
-            suffix_cache = SuffixCache(
-                keys=step_kv.keys, values=step_kv.values, length=step_kv.keys.size(dim=2)
-            )
-            suffix_kv = step_kv
-        attended = self.self_attention(query=normed, keys_values=suffix_kv, causal=cache is None)
+        attended = self.self_attention(
+            query=normed, keys_values=self.self_attention.project(normed), causal=True
+        )
         hidden = hidden + self.self_attention_dropout(attended)
+        return self._attend_prefix(
+            hidden, prefix_kv=self.cross_attention.project(prefix.hidden), pad_mask=prefix.pad_mask
+        )
 
-        prefix_kv = (
-            cache.prefix_kv if cache is not None else self.cross_attention.project(prefix.hidden)
+    def step(
+        self, hidden: torch.Tensor, *, cache: LayerCache, pad_mask: torch.Tensor, position: int
+    ) -> torch.Tensor:
+        """Run one layer over suffix slot `position` `[B, 1, D]`, writing its keys and values
+        into `cache`, the prefix's padding marked by `pad_mask` `[B, P]`."""
+        normed = self.self_attention_norm(hidden)
+        step_kv = self.self_attention.project(normed)  # [B, H, 1, Dh]
+        cache.suffix_kv.keys[:, :, position : position + 1] = step_kv.keys
+        cache.suffix_kv.values[:, :, position : position + 1] = step_kv.values
+        filled = ProjectedKeysValues(
+            keys=cache.suffix_kv.keys[:, :, : position + 1],
+            values=cache.suffix_kv.values[:, :, : position + 1],
         )
-        attended = self.cross_attention(
-            query=self.cross_attention_norm(hidden),
-            keys_values=prefix_kv,
-            key_padding_mask=prefix.pad_mask,
-        )
-        hidden = hidden + self.cross_attention_dropout(attended)
-        hidden = hidden + self.feedforward_dropout(self.feedforward(self.feedforward_norm(hidden)))
-        return hidden, LayerCache(prefix_kv=prefix_kv, suffix_kv=suffix_cache)
+        attended = self.self_attention(query=normed, keys_values=filled)
+        hidden = hidden + self.self_attention_dropout(attended)
+        return self._attend_prefix(hidden, prefix_kv=cache.prefix_kv, pad_mask=pad_mask)
 
     def init_cache(self, prefix: 'EncodedPrefix', *, max_steps: int) -> LayerCache:
         """The cache for generation: the prefix projected once and an empty suffix cache of
@@ -223,11 +203,22 @@ class DecoderLayer(nn.Module):
         shape = (batch_size, self.self_attention.num_heads, max_steps, self.self_attention.head_dim)
         return LayerCache(
             prefix_kv=self.cross_attention.project(prefix.hidden),
-            suffix_kv=SuffixCache(
-                keys=prefix.hidden.new_zeros(size=shape),
-                values=prefix.hidden.new_zeros(size=shape),
+            suffix_kv=ProjectedKeysValues(
+                keys=prefix.hidden.new_zeros(size=shape), values=prefix.hidden.new_zeros(size=shape)
             ),
         )
+
+    def _attend_prefix(
+        self, hidden: torch.Tensor, *, prefix_kv: ProjectedKeysValues, pad_mask: torch.Tensor
+    ) -> torch.Tensor:
+        """Cross-attend over the projected prefix, then the feedforward sublayer."""
+        attended = self.cross_attention(
+            query=self.cross_attention_norm(hidden),
+            keys_values=prefix_kv,
+            key_padding_mask=pad_mask,
+        )
+        hidden = hidden + self.cross_attention_dropout(attended)
+        return hidden + self.feedforward_dropout(self.feedforward(self.feedforward_norm(hidden)))
 
 
 @dataclass(frozen=True)
@@ -247,8 +238,17 @@ class EncodedPrefix:
 class TransformerState:
     """What a generation carries between steps."""
 
-    prefix: EncodedPrefix
+    pad_mask: torch.Tensor  # [B, P], True at prefix padding
+    starts: torch.Tensor  # [B], the trace position of suffix slot 0
     caches: list[LayerCache]
+
+    def select(self, index: torch.Tensor) -> 'TransformerState':
+        """Keep the rows at `index` `[B']`."""
+        return TransformerState(
+            pad_mask=self.pad_mask[index],
+            starts=self.starts[index],
+            caches=[cache.select(index) for cache in self.caches],
+        )
 
 
 class TransformerBackbone(nn.Module):
@@ -275,21 +275,16 @@ class TransformerBackbone(nn.Module):
             max_trace_length: The longest case, which sizes the position table.
         """
         super().__init__()
-        self.content = content
         self.register_buffer(
             name='positional_encoding',
             tensor=position_table(max_trace_length=max_trace_length, d_model=d_model),
         )
-        # The embeddings are shared but these norms are not: the two stacks read one embedding
-        # space at whatever scale each of them settles on.
-        self.encoder_dropout = SequenceDropout(p=dropout, shape=(d_model,))
-        self.encoder_embedding_norm = nn.LayerNorm(normalized_shape=d_model)
+        self.encoder_input = EmbeddingInput(content, d_model=d_model, dropout=dropout)
         self.encoder_layers = nn.ModuleList(
             EncoderLayer(config, d_model=d_model, dropout=dropout) for _ in range(config.num_layers)
         )
         self.encoder_norm = nn.LayerNorm(normalized_shape=d_model)
-        self.decoder_dropout = SequenceDropout(p=dropout, shape=(d_model,))
-        self.decoder_embedding_norm = nn.LayerNorm(normalized_shape=d_model)
+        self.decoder_input = EmbeddingInput(content, d_model=d_model, dropout=dropout)
         self.decoder_layers = nn.ModuleList(
             DecoderLayer(config, d_model=d_model, dropout=dropout) for _ in range(config.num_layers)
         )
@@ -300,7 +295,9 @@ class TransformerBackbone(nn.Module):
     def encode(self, prefix: Events) -> EncodedPrefix:
         """Encode prefix events `[B, P]` with bidirectional attention over unpadded events."""
         pad_mask = prefix.pad_mask()
-        hidden = self.encoder_embedding_norm(self.encoder_dropout(self._embed(prefix)))
+        hidden = self.encoder_input(
+            prefix, self.positional_encoding[: prefix.activities.size(dim=1)]
+        )
         for layer in self.encoder_layers:
             hidden = layer(hidden, pad_mask=pad_mask)
         return EncodedPrefix(hidden=self.encoder_norm(hidden), pad_mask=pad_mask)
@@ -308,59 +305,49 @@ class TransformerBackbone(nn.Module):
     def decode(self, inputs: Events, prefix: EncodedPrefix) -> torch.Tensor:
         """Read every teacher-forced decoder input `[B, T]` at once under a causal mask.
 
+        No suffix padding mask: under the causal mask a padded position is visible only to later
+        positions, themselves padded and dropped from the loss. Masking it would leave a row with
+        nothing to attend to, whose softmax is a NaN.
+
         Returns:
             `[B, T, D]`, position `j` having read inputs `0..j` only.
         """
-        hidden, _ = self._run_layers(inputs, prefix=prefix, start=prefix.lengths, caches=None)
-        return hidden
+        hidden = self.decoder_input(
+            inputs, self._positions(prefix.lengths, width=inputs.activities.size(dim=1))
+        )
+        for layer in self.decoder_layers:
+            hidden = layer(hidden, prefix=prefix)
+        return self.decoder_norm(hidden)
 
-    def start(self, prefix: EncodedPrefix, *, max_steps: int) -> TransformerState:
-        """Prepare a generation of at most `max_steps` steps."""
+    def start(self, prefix: Events, *, max_steps: int) -> TransformerState:
+        """Encode prefix events `[B, P]` for a generation of at most `max_steps` steps."""
+        encoded = self.encode(prefix)
         return TransformerState(
-            prefix=prefix,
-            caches=[layer.init_cache(prefix, max_steps=max_steps) for layer in self.decoder_layers],
+            pad_mask=encoded.pad_mask,
+            starts=encoded.lengths,
+            caches=[
+                layer.init_cache(encoded, max_steps=max_steps) for layer in self.decoder_layers
+            ],
         )
 
     def step(
         self, inputs: Events, state: TransformerState, *, position: int
     ) -> tuple[torch.Tensor, TransformerState]:
-        """Read the decoder input `[B, 1]` of suffix slot `position`.
+        """Read the decoder input `[B, 1]` of suffix slot `position`, caching it in `state`.
 
         Returns:
-            `[B, D]` and the state holding this position too.
+            `[B, D]` and the state.
         """
-        hidden, caches = self._run_layers(
-            inputs, prefix=state.prefix, start=state.prefix.lengths + position, caches=state.caches
-        )
-        return hidden[:, 0], TransformerState(prefix=state.prefix, caches=caches)
+        hidden = self.decoder_input(inputs, self._positions(state.starts + position, width=1))
+        for layer, cache in zip(self.decoder_layers, state.caches, strict=True):
+            hidden = layer.step(hidden, cache=cache, pad_mask=state.pad_mask, position=position)
+        return self.decoder_norm(hidden)[:, 0], state
 
-    def _embed(self, events: Events, start: torch.Tensor | None = None) -> torch.Tensor:
-        """Embed events `[B, T]` as `[B, T, D]`, each row's first at position `start` `[B]`, or
-        at position 0 when None."""
-        content = self.content(events)
-        positions = torch.arange(end=content.size(dim=1), device=content.device)  # [T]
-        if start is not None:
-            positions = start.unsqueeze(dim=1) + positions  # [B, 1] + [T] -> [B, T]
-        return content + self.positional_encoding[positions]
+    def select(self, state: TransformerState, index: torch.Tensor) -> TransformerState:
+        """Keep the generation rows at `index` `[B']`."""
+        return state.select(index)
 
-    def _run_layers(
-        self,
-        inputs: Events,
-        *,
-        prefix: EncodedPrefix,
-        start: torch.Tensor,
-        caches: list[LayerCache] | None,
-    ) -> tuple[torch.Tensor, list[LayerCache]]:
-        """Embed decoder inputs and push them through the stack.
-
-        No suffix padding mask: under the causal mask a padded position is visible only to later
-        positions, themselves padded and dropped from the loss. Masking it would leave a row with
-        nothing to attend to, whose softmax is a NaN.
-        """
-        hidden = self.decoder_embedding_norm(self.decoder_dropout(self._embed(inputs, start)))
-        layer_caches = caches if caches is not None else [None] * len(self.decoder_layers)
-        new_caches: list[LayerCache] = []
-        for layer, cache in zip(self.decoder_layers, layer_caches, strict=True):
-            hidden, layer_cache = layer(hidden, prefix=prefix, cache=cache)
-            new_caches.append(layer_cache)
-        return self.decoder_norm(hidden), new_caches
+    def _positions(self, start: torch.Tensor, *, width: int) -> torch.Tensor:
+        """`[B, width, D]` encodings of each row's positions from `start` `[B]` on."""
+        positions = torch.arange(end=width, device=start.device)
+        return self.positional_encoding[start.unsqueeze(dim=1) + positions]  # [B, 1] + [W]

@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from pseval.data import TIMESTAMP_KEY
+from pseval.data import INTER_EVENT_MINUTES_KEY, TIMESTAMP_KEY
 
 # Minutes since the first event of the case, offered to the encoders as an event feature.
 CASE_ELAPSED_KEY = 'ts_start'
@@ -17,9 +17,9 @@ SECONDS_COS_KEY = 'seconds_cos'
 def derive_features(events: pd.DataFrame, offsets: np.ndarray) -> pd.DataFrame:
     """Add each event's case elapsed minutes and calendar position.
 
-    Both are read off the event's own timestamp, so a prefix derives them exactly as its whole case
-    does: the calendar from the event alone, and the elapsed minutes from the first event of the
-    run, which is the first event of its case.
+    Both are read off the event and the ones before it, so a prefix derives them exactly as its
+    whole case does: the calendar from the event's own timestamp, and the elapsed minutes as the
+    run's inter-event minutes summed so far, zero at a run's first event, which is its case's.
 
     Args:
         events: One row per event, each run's rows consecutive and in time order.
@@ -29,16 +29,15 @@ def derive_features(events: pd.DataFrame, offsets: np.ndarray) -> pd.DataFrame:
     Returns:
         A copy of `events` with `CASE_ELAPSED_KEY` and the four calendar columns added.
     """
-    timestamps = events[TIMESTAMP_KEY].reset_index(drop=True)
-    run_starts = timestamps.iloc[np.repeat(offsets[:-1], np.diff(offsets))].reset_index(drop=True)
-    calendar = timestamps.dt
+    total = np.cumsum(events[INTER_EVENT_MINUTES_KEY].to_numpy(np.float64))
+    calendar = events[TIMESTAMP_KEY].dt
     day = calendar.weekday  # 0 (Monday) .. 6 (Sunday)
     seconds = calendar.hour * 3600 + calendar.minute * 60 + calendar.second  # 0 .. 86399
     day_angle = (2 * np.pi * day / 7).to_numpy()
     seconds_angle = (2 * np.pi * seconds / 86400).to_numpy()
     return events.assign(
         **{
-            CASE_ELAPSED_KEY: ((timestamps - run_starts).dt.total_seconds() / 60.0).to_numpy(),
+            CASE_ELAPSED_KEY: total - np.repeat(total[offsets[:-1]], np.diff(offsets)),
             DAY_SIN_KEY: np.sin(day_angle),
             DAY_COS_KEY: np.cos(day_angle),
             SECONDS_SIN_KEY: np.sin(seconds_angle),

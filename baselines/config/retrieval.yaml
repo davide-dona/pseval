@@ -1,6 +1,6 @@
-defaults:
-- dataset: ???
-- _self_
+data:
+  # The benchmark: sepsis, bpic12, bpic17, or bpic19.
+  name: ???
 run_id: ${now:%Y%m%d-%H%M%S-%f}
 num_samples: 100
 seed: 42

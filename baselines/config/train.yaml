@@ -1,18 +1,37 @@
 defaults:
+- _self_
 - dataset: ???
 - model: u_ed_transformer
-- training: default
-# A multirun first composes without its sweep values, leaving `dataset` missing. Falling back to
-# ??? makes Hydra skip the regime there too, instead of failing on the missing interpolation.
-- regime: ${oc.select:dataset,???}
-- _self_
 run_id: ${now:%Y%m%d-%H%M%S-%f}
 seed: 42
 device: cuda:0
 # A local root holding `<dataset>/`, instead of the Hub benchmark of the installed pseval.
 benchmark_root: null
+# The regime every dataset trains under, unless its `dataset/` file overrides it.
+optimizer:
+  lr: ???
+  betas: [0.9, 0.95]
+  weight_decay: 0.01
+  warmup_steps: 1500
+  min_lr_factor: 0.1
+training:
+  max_steps: 30000
+  val_every_n_steps: 300
+  grad_clip_norm: 1.0
+  # Validation pairs the teacher-forced loss is reported on.
+  validation_pairs: ???
+  # Validation prefixes `pseval.validate` scores to select the checkpoint.
+  validation_prefixes: ???
+early_stopping:
+  patience_validations: 20
+  min_delta_perc: 0.005
+inference:
+  # Draws per validation prefix.
+  validation_samples: 32
+  # The most rows, prefixes times draws, decoded at once.
+  max_rows: 8192
 dataloader:
-  num_workers: 12
+  batch_size: ???
 wandb:
   project: pseval-baselines
   mode: online

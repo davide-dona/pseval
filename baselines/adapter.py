@@ -17,21 +17,10 @@ def seeded(*, seed: int, device: torch.device) -> Iterator[None]:
     Draws inside the block depend on the seed alone, and the training stream outside it is left
     where it was.
     """
-    devices = (
-        [device.index if device.index is not None else torch.cuda.current_device()]
-        if device.type == 'cuda'
-        else []
-    )
-    with torch.random.fork_rng(devices=devices):
-        mps_state = torch.mps.get_rng_state() if device.type == 'mps' else None
-        try:
-            torch.manual_seed(seed)
-            if mps_state is not None:
-                torch.mps.manual_seed(seed)
-            yield
-        finally:
-            if mps_state is not None:
-                torch.mps.set_rng_state(mps_state)
+    devices = [] if device.type == 'cpu' else [device.index or 0]
+    with torch.random.fork_rng(devices=devices, device_type=device.type):
+        torch.manual_seed(seed)
+        yield
 
 
 class TorchSuffixModel(SuffixModel):
@@ -42,21 +31,18 @@ class TorchSuffixModel(SuffixModel):
         model: UncertaintyAwareEncoderDecoder,
         codec: Codec,
         *,
-        max_suffix_length: int,
         device: torch.device,
         max_rows: int,
     ) -> None:
         """
         Args:
             model: The model, already on `device`.
-            codec: The codec the model was trained through.
-            max_suffix_length: The benchmark's length cap, the most events a draw may hold.
+            codec: The codec the model was trained through. Its length cap bounds every draw.
             device: Where the model runs.
             max_rows: The most rows, prefixes times draws, decoded at once, to bound memory.
         """
         self.model = model
         self.codec = codec
-        self.max_suffix_length = max_suffix_length
         self.device = device
         self.max_rows = max_rows
 
@@ -71,24 +57,28 @@ class TorchSuffixModel(SuffixModel):
                 generated = self.model.generate(
                     events.rows(slice(start, start + chunk)),
                     num_samples=num_samples,
-                    max_steps=self.max_suffix_length,
+                    max_steps=self.codec.max_trace_length,
                 )
                 forecasts.extend(self._decode(generated))
         return forecasts
 
     def _decode(self, generated: GeneratedSuffix) -> list[Forecast]:
         """Read generated suffixes back as names and nonnegative inter-event minutes."""
-        activities = generated.activities.cpu().numpy()  # [B, S, T]
         lengths = generated.lengths.cpu().numpy()  # [B, S]
+        activities = generated.activities.cpu().numpy()  # [B, S, T]
+        # PAD past each length decodes to an arbitrary name, sliced off below.
+        names = self.codec.activity.decode(
+            np.maximum(activities, self.codec.activity.first_name)
+        )  # [B, S, T]
         minutes = np.maximum(
             self.codec.inter_event_time.denormalize(generated.inter_event_times.cpu().numpy()), 0.0
         )  # [B, S, T]
-        truncated = generated.truncated.cpu().numpy()  # [B, S]
+        truncated = lengths == self.codec.max_trace_length  # [B, S]
         return [
             Forecast(
                 draws=tuple(
                     Draw(
-                        activities=self.codec.activity.decode(activities[row, sample, :length]),
+                        activities=names[row, sample, :length],
                         inter_event_time_minutes=minutes[row, sample, :length],
                         truncated=truncated[row, sample],
                     )

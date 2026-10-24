@@ -5,7 +5,7 @@ from omegaconf import DictConfig
 
 import pseval
 from baselines.models.retrieval import Retrieval
-from baselines.pipelines.helpers import load_benchmark, output_path
+from baselines.pipelines.helpers import output_path
 
 
 def run(config: DictConfig) -> Path:
@@ -13,7 +13,7 @@ def run(config: DictConfig) -> Path:
 
     Retrieval has nothing to select, so it reads no validation data.
     """
-    benchmark = load_benchmark(config.data.name, config.benchmark_root)
+    benchmark = pseval.load_benchmark(config.data.name, root=config.benchmark_root)
     model = Retrieval(benchmark.train, vocabulary=benchmark.vocabulary)
     path = pseval.generate(
         model,

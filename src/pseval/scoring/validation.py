@@ -1,9 +1,7 @@
-from collections.abc import Sequence
-
+import numpy as np
 import pandas as pd
 
 from pseval.benchmark import Benchmark
-from pseval.data import Cut
 from pseval.model import SuffixModel, batch_seed, forecast
 from pseval.scoring.summary import means
 
@@ -12,7 +10,7 @@ def validate(
     model: SuffixModel,
     benchmark: Benchmark,
     *,
-    cuts: Sequence[Cut] | None = None,
+    max_prefixes: int | None = None,
     num_samples: int = 32,
     seed: int = 42,
     batch_size: int = 256,
@@ -22,10 +20,11 @@ def validate(
     Args:
         model: The model to score, its `sample` called on validation prefixes only.
         benchmark: The benchmark whose validation split to read.
-        cuts: The validation cuts to score, such as a fixed subset drawn once per training run.
-            Every cut of the split when None.
+        max_prefixes: How many validation prefixes to score, drawn uniformly from `seed`, so
+            every call with the same seed scores the same ones. Every prefix when None or when the
+            split holds no more.
         num_samples: Draws per prefix, at least two.
-        seed: Seed of the draws.
+        seed: Seed of the prefix subset and of the draws.
         batch_size: Prefixes per `sample` call.
 
     Returns:
@@ -33,16 +32,18 @@ def validate(
         Which one selects the model is its author's choice.
 
     Raises:
-        ValueError: If the draws break the protocol contract, which also asks for at least two
-            draws per prefix, or if `cuts` is empty or holds a cut outside the split.
+        ValueError: If `max_prefixes` is below one, or if the draws break the protocol contract,
+            which also asks for at least two draws per prefix.
     """
-    # Prepare the validation data
+    if max_prefixes is not None and max_prefixes < 1:
+        raise ValueError('max_prefixes must be at least one')
+    # Prepare the validation data, sorted by prefix length as generation does
     log = benchmark.validation
-    every_cut = log.cuts()
-    if cuts is None:
-        cuts = every_cut
-    elif not cuts or not set(cuts) <= set(every_cut):
-        raise ValueError('Validation cuts must be a nonempty subset of the validation split')
+    cuts = log.cuts()
+    if max_prefixes is not None and max_prefixes < len(cuts):
+        drawn = np.random.default_rng(seed).choice(len(cuts), size=max_prefixes, replace=False)
+        cuts = [cuts[index] for index in drawn]
+    cuts = sorted(cuts, key=lambda cut: cut.prefix_len)
 
     scorer = benchmark.scorer
     scores = []

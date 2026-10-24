@@ -1,15 +1,16 @@
 from pathlib import Path
 
-import numpy as np
 import torch
+from omegaconf import OmegaConf
 from torch import nn
+
+import pseval
+from baselines.data.codec import Codec
+from baselines.models.u_ed import UncertaintyAwareEncoderDecoder
 
 # What every checkpoint holds: the resolved run configuration, the digest of the benchmark it was
 # trained on, the selected weights, and the step and validation score they were selected at.
 CHECKPOINT_KEYS = ('config', 'benchmark', 'model_state_dict', 'step', 'selection_score')
-
-# Checkpoints may store NumPy float64 metadata, which weights-only unpickling rejects by default.
-_SAFE_GLOBALS = [np._core.multiarray.scalar, np.dtype, np.dtypes.Float64DType]
 
 
 def save_checkpoint(
@@ -43,9 +44,28 @@ def load_checkpoint(path: Path) -> dict:
     Raises:
         ValueError: If it lacks a `CHECKPOINT_KEYS` entry.
     """
-    with torch.serialization.safe_globals(_SAFE_GLOBALS):
-        checkpoint = torch.load(f=path, map_location='cpu', weights_only=True)
+    checkpoint = torch.load(f=path, map_location='cpu', weights_only=True)
     missing = [key for key in CHECKPOINT_KEYS if key not in checkpoint]
     if missing:
         raise ValueError(f'{path} is missing {", ".join(missing)}; train the model again')
     return checkpoint
+
+
+def restore_model(
+    checkpoint: dict, benchmark: pseval.Benchmark
+) -> tuple[UncertaintyAwareEncoderDecoder, Codec]:
+    """Rebuild a checkpoint's model, refitting its codec on the benchmark it was trained on.
+
+    Raises:
+        ValueError: If `benchmark` is not the one the checkpoint was trained on, whose codec the
+            weights expect.
+    """
+    if benchmark.digest != checkpoint['benchmark']:
+        raise ValueError(
+            f'The checkpoint was trained on another benchmark than {benchmark.dataset}'
+        )
+    config = OmegaConf.create(checkpoint['config'])
+    codec = Codec.fit(benchmark, config.data)
+    model = UncertaintyAwareEncoderDecoder(config.model, codec)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    return model, codec

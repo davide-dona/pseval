@@ -30,6 +30,11 @@ class SequenceDropout(nn.Module):
         keep = torch.rand(size=(rows, *self.shape), device=device) >= self.p
         self.mask = keep.float() / (1.0 - self.p)
 
+    def select(self, index: torch.Tensor) -> None:
+        """Keep the masks of the rows at `index` `[R']`, in that order."""
+        if self.mask is not None:
+            self.mask = self.mask[index]
+
     def forward(self, values: torch.Tensor) -> torch.Tensor:
         """Mask `[R, *shape]` values, or `[R, T, *shape]` values with the mask broadcast over
         positions."""
@@ -44,3 +49,10 @@ def resample_masks(module: nn.Module, *, rows: int, device: torch.device, active
     for submodule in module.modules():
         if isinstance(submodule, SequenceDropout):
             submodule.resample(rows=rows, device=device, active=active)
+
+
+def select_masks(module: nn.Module, index: torch.Tensor) -> None:
+    """Keep the masks of the rows at `index` in every `SequenceDropout` inside `module`."""
+    for submodule in module.modules():
+        if isinstance(submodule, SequenceDropout):
+            submodule.select(index)

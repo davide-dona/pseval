@@ -6,10 +6,14 @@ from torch import nn
 
 from baselines.data.codec import Codec
 from baselines.data.dataset import Events
+from baselines.models.dropout import SequenceDropout
 
 
 class EventContentEmbedding(nn.Module):
-    """Project an event's activity, resource, time, and attributes to model width."""
+    """Project an event's activity, resource, time, and attributes to model width.
+
+    Row 0 of every table is PAD, embedded as zeros.
+    """
 
     def __init__(self, config: DictConfig, codec: Codec, *, d_model: int):
         """Build the embedding tables and projection from the dataset codec."""
@@ -17,12 +21,12 @@ class EventContentEmbedding(nn.Module):
         self.activity_embedding = nn.Embedding(
             num_embeddings=codec.activity.num_rows,
             embedding_dim=config.activity_dim,
-            padding_idx=codec.activity.pad_index,
+            padding_idx=0,
         )
         self.resource_embedding = nn.Embedding(
             num_embeddings=codec.resource.num_rows,
             embedding_dim=config.resource_dim,
-            padding_idx=codec.resource.pad_index,
+            padding_idx=0,
         )
         self.num_categorical = len(codec.categorical_features)
         self.num_numeric = len(codec.numeric_features)
@@ -63,6 +67,27 @@ class EventContentEmbedding(nn.Module):
         channels.append(events.numeric_attributes_present)  # [B, T, N]
         event = torch.cat(tensors=channels, dim=-1)  # channels -> [B, T, projection.in_features]
         return self.projection(event)  # [B, T, projection.in_features] -> [B, T, D]
+
+
+class EmbeddingInput(nn.Module):
+    """One stack's input: the shared event embedding, optional positions, dropout, and a norm.
+
+    The embedding is shared but the norm is not, so each stack reads one embedding space at
+    whatever scale it settles on.
+    """
+
+    def __init__(self, content: EventContentEmbedding, *, d_model: int, dropout: float) -> None:
+        super().__init__()
+        self.content = content
+        self.dropout = SequenceDropout(p=dropout, shape=(d_model,))
+        self.norm = nn.LayerNorm(normalized_shape=d_model)
+
+    def forward(self, events: Events, positions: torch.Tensor | None = None) -> torch.Tensor:
+        """Embed events `[B, T]` as `[B, T, D]`, adding position encodings `[B, T, D]` if given."""
+        embedded = self.content(events)
+        if positions is not None:
+            embedded = embedded + positions
+        return self.norm(self.dropout(embedded))
 
 
 def sinusoidal_encoding(values: torch.Tensor, width: int, *, base: float) -> torch.Tensor:

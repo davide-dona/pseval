@@ -2,6 +2,6 @@ defaults:
 - u_ed_transformer
 - _self_
 label: plain_autoregressive
-# No logit variance and no dropout at generation: activities from the softmax, times from the
-# Gaussian head.
-uncertainty: null
+# Activities from the softmax and times from the Gaussian head of one deterministic network.
+logit_samples: null
+generation_dropout: false

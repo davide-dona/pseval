@@ -6,7 +6,7 @@ from torch import nn
 
 from baselines.data.dataset import Events
 from baselines.models.dropout import SequenceDropout
-from baselines.models.embeddings import EventContentEmbedding
+from baselines.models.embeddings import EmbeddingInput, EventContentEmbedding
 
 # Per-layer hidden and cell states, `[B, D]` each.
 LSTMState = list[tuple[torch.Tensor, torch.Tensor]]
@@ -14,40 +14,36 @@ LSTMState = list[tuple[torch.Tensor, torch.Tensor]]
 
 @torch.compile(dynamic=True)
 def _lstm_step(
-    inputs: torch.Tensor,
+    projected_inputs: torch.Tensor,
     hidden: torch.Tensor,
     cell: torch.Tensor,
-    input_weights: torch.Tensor,
     hidden_weights: torch.Tensor,
     bias: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """One LSTM step from gate-wise masked inputs.
+    """One LSTM step from an already projected input and a gate-wise masked hidden state.
 
     Args:
-        inputs: `[B, 4, I]`, the input as each gate reads it.
+        projected_inputs: `[B, 4, H]`, the input's contribution to each gate.
         hidden: `[B, 4, H]`, the previous hidden state as each gate reads it.
         cell: `[B, H]`, the previous cell state.
-        input_weights: `[4, H, I]`.
         hidden_weights: `[4, H, H]`.
         bias: `[4, H]`.
 
     Returns:
         The next hidden and cell states, `[B, H]` each.
     """
-    gates = (
-        torch.einsum('bgi,ghi->bgh', inputs, input_weights)
-        + torch.einsum('bgk,ghk->bgh', hidden, hidden_weights)
-        + bias
-    )  # [B, 4, H]
-    input_gate, forget_gate, candidate, output_gate = gates.unbind(dim=1)
+    gates = projected_inputs + torch.einsum('bgk,ghk->bgh', hidden, hidden_weights) + bias
+    input_gate, forget_gate, candidate, output_gate = gates.unbind(dim=1)  # 4 x [B, H]
     cell = forget_gate.sigmoid() * cell + input_gate.sigmoid() * candidate.tanh()
     return output_gate.sigmoid() * cell.tanh(), cell
 
 
 class VariationalLSTMCell(nn.Module):
-    """LSTM cell with one dropout mask per sequence on each gate's input and hidden state.
+    """LSTM layer with one dropout mask per sequence on each gate's input and hidden state.
 
-    The recurrent path is masked as Gal and Ghahramani do, which cuDNN's `nn.LSTM` cannot.
+    The recurrent path is masked as Gal and Ghahramani do, which cuDNN's `nn.LSTM` cannot. The
+    input mask is fixed per sequence, so every position's input projection runs as one product
+    before the recurrence.
     """
 
     def __init__(self, *, input_size: int, hidden_size: int, dropout: float) -> None:
@@ -65,18 +61,42 @@ class VariationalLSTMCell(nn.Module):
         self.hidden_dropout = SequenceDropout(p=dropout, shape=(4, hidden_size))
 
     def forward(
-        self, inputs: torch.Tensor, state: tuple[torch.Tensor, torch.Tensor]
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Advance `state` by one input `[B, I]`."""
+        self,
+        inputs: torch.Tensor,
+        state: tuple[torch.Tensor, torch.Tensor],
+        *,
+        keep: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
+        """Run the layer over inputs `[B, T, I]` from `state`.
+
+        Args:
+            inputs: One input per position.
+            state: The hidden and cell states before the first position, `[B, H]` each.
+            keep: `[B, T]`, False where a row keeps its state instead of advancing, or None to
+                advance every row at every position.
+
+        Returns:
+            The hidden state after each position, `[B, T, H]`, and the final state.
+        """
+        masked = self.input_dropout(inputs.unsqueeze(dim=2).expand(-1, -1, 4, -1))  # [B, T, 4, I]
+        projected = torch.einsum('btgi,ghi->btgh', masked, self.input_weights)  # [B, T, 4, H]
         hidden, cell = state
-        return _lstm_step(
-            inputs=self.input_dropout(inputs.unsqueeze(dim=1).expand(-1, 4, -1)),  # -> [B, 4, I]
-            hidden=self.hidden_dropout(hidden.unsqueeze(dim=1).expand(-1, 4, -1)),  # -> [B, 4, H]
-            cell=cell,
-            input_weights=self.input_weights,
-            hidden_weights=self.hidden_weights,
-            bias=self.bias,
-        )
+        outputs = []
+        for position in range(inputs.size(dim=1)):
+            next_hidden, next_cell = _lstm_step(
+                projected_inputs=projected[:, position],
+                hidden=self.hidden_dropout(hidden.unsqueeze(dim=1).expand(-1, 4, -1)),  # [B, 4, H]
+                cell=cell,
+                hidden_weights=self.hidden_weights,
+                bias=self.bias,
+            )
+            if keep is not None:
+                advance = keep[:, position].unsqueeze(dim=1)  # [B, 1]
+                next_hidden = torch.where(advance, next_hidden, hidden)
+                next_cell = torch.where(advance, next_cell, cell)
+            hidden, cell = next_hidden, next_cell
+            outputs.append(hidden)
+        return torch.stack(outputs, dim=1), (hidden, cell)  # T x [B, H] -> [B, T, H]
 
 
 class LSTMBackbone(nn.Module):
@@ -94,15 +114,12 @@ class LSTMBackbone(nn.Module):
             dropout: The variational dropout rate of every site.
         """
         super().__init__()
-        self.content = content
-        self.encoder_dropout = SequenceDropout(p=dropout, shape=(d_model,))
-        self.encoder_embedding_norm = nn.LayerNorm(normalized_shape=d_model)
+        self.encoder_input = EmbeddingInput(content, d_model=d_model, dropout=dropout)
         self.encoder_cells = nn.ModuleList(
             VariationalLSTMCell(input_size=d_model, hidden_size=d_model, dropout=dropout)
             for _ in range(config.num_layers)
         )
-        self.decoder_dropout = SequenceDropout(p=dropout, shape=(d_model,))
-        self.decoder_embedding_norm = nn.LayerNorm(normalized_shape=d_model)
+        self.decoder_input = EmbeddingInput(content, d_model=d_model, dropout=dropout)
         self.decoder_cells = nn.ModuleList(
             VariationalLSTMCell(input_size=d_model, hidden_size=d_model, dropout=dropout)
             for _ in range(config.num_layers)
@@ -110,21 +127,14 @@ class LSTMBackbone(nn.Module):
 
     def encode(self, prefix: Events) -> LSTMState:
         """Read prefix events `[B, P]` and return each layer's state at the row's last event."""
-        embedded = self.encoder_embedding_norm(self.encoder_dropout(self.content(prefix)))
-        real = prefix.pad_mask().logical_not()  # [B, P]
+        embedded = self.encoder_input(prefix)
         zeros = embedded.new_zeros(size=(embedded.size(dim=0), embedded.size(dim=2)))
-        states: LSTMState = [(zeros, zeros) for _ in self.encoder_cells]
-        for position in range(embedded.size(dim=1)):
-            # A row past its last event keeps the state it reached there.
-            keep = real[:, position].unsqueeze(dim=1)  # [B, 1]
-            states = [
-                (torch.where(keep, hidden, old_hidden), torch.where(keep, cell, old_cell))
-                for (hidden, cell), (old_hidden, old_cell) in zip(
-                    self._advance(self.encoder_cells, embedded[:, position], states),
-                    states,
-                    strict=True,
-                )
-            ]
+        _, states = _run_stack(
+            self.encoder_cells,
+            inputs=embedded,
+            states=[(zeros, zeros) for _ in self.encoder_cells],
+            keep=prefix.pad_mask().logical_not(),
+        )
         return states
 
     def decode(self, inputs: Events, prefix: LSTMState) -> torch.Tensor:
@@ -133,17 +143,15 @@ class LSTMBackbone(nn.Module):
         Returns:
             `[B, T, D]`, the top layer's state after each input.
         """
-        embedded = self.decoder_embedding_norm(self.decoder_dropout(self.content(inputs)))
-        states = prefix
-        outputs = []
-        for position in range(embedded.size(dim=1)):
-            states = self._advance(self.decoder_cells, embedded[:, position], states)
-            outputs.append(states[-1][0])
-        return torch.stack(outputs, dim=1)  # T x [B, D] -> [B, T, D]
+        outputs, _ = _run_stack(
+            self.decoder_cells, inputs=self.decoder_input(inputs), states=prefix
+        )
+        return outputs
 
-    def start(self, prefix: LSTMState, *, max_steps: int) -> LSTMState:
-        """Prepare a generation: the decoder starts from the encoder's final states."""
-        return prefix
+    def start(self, prefix: Events, *, max_steps: int) -> LSTMState:
+        """Encode prefix events `[B, P]` for a generation: the decoder starts from the encoder's
+        final states."""
+        return self.encode(prefix)
 
     def step(
         self, inputs: Events, state: LSTMState, *, position: int
@@ -153,16 +161,30 @@ class LSTMBackbone(nn.Module):
         Returns:
             `[B, D]` and the advanced state.
         """
-        embedded = self.decoder_embedding_norm(self.decoder_dropout(self.content(inputs)))
-        states = self._advance(self.decoder_cells, embedded[:, 0], state)
-        return states[-1][0], states
+        outputs, state = _run_stack(
+            self.decoder_cells, inputs=self.decoder_input(inputs), states=state
+        )
+        return outputs[:, 0], state
 
-    @staticmethod
-    def _advance(cells: nn.ModuleList, inputs: torch.Tensor, states: LSTMState) -> LSTMState:
-        """Push one input `[B, D]` up the stack, each layer reading the one below."""
-        advanced: LSTMState = []
-        for cell, state in zip(cells, states, strict=True):
-            hidden, cell_state = cell(inputs, state)
-            advanced.append((hidden, cell_state))
-            inputs = hidden
-        return advanced
+    def select(self, state: LSTMState, index: torch.Tensor) -> LSTMState:
+        """Keep the generation rows at `index` `[B']`."""
+        return [(hidden[index], cell[index]) for hidden, cell in state]
+
+
+def _run_stack(
+    cells: nn.ModuleList,
+    *,
+    inputs: torch.Tensor,
+    states: LSTMState,
+    keep: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, LSTMState]:
+    """Run inputs `[B, T, D]` up the stack a layer at a time, each layer reading the one below.
+
+    Returns:
+        The top layer's outputs `[B, T, D]` and every layer's final state.
+    """
+    final: LSTMState = []
+    for cell, state in zip(cells, states, strict=True):
+        inputs, state = cell(inputs, state, keep=keep)
+        final.append(state)
+    return inputs, final

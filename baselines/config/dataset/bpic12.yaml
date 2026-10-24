@@ -12,3 +12,11 @@ data:
   - (case) AMOUNT_REQ
   - ts_start
   log_scaled_target_inter_event_time: false
+# The training regime of this dataset, over the defaults of train.yaml.
+optimizer:
+  lr: 0.0003
+training:
+  validation_pairs: 10000
+  validation_prefixes: 1000
+dataloader:
+  batch_size: 128

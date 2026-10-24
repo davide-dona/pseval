@@ -2,9 +2,10 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from time import perf_counter
-from typing import Protocol
 
 import torch
+import wandb
+from omegaconf import DictConfig
 from torch import optim
 from torch.utils.data import DataLoader
 
@@ -14,56 +15,6 @@ from baselines.training.loss import Loss
 
 # The validation metric that selects the checkpoint, lower is better.
 SELECTION_METRIC = 'signature_kernel_score'
-
-
-@dataclass(frozen=True, slots=True)
-class OptimizerSettings:
-    """AdamW parameters and step-relative learning rate schedule."""
-
-    lr: float
-    betas: tuple[float, float]
-    weight_decay: float
-    warmup_steps: int
-    min_lr_factor: float
-
-
-@dataclass(frozen=True, slots=True)
-class TrainingSettings:
-    """Optimization, validation, and stopping settings for one training run."""
-
-    optimizer: OptimizerSettings
-    device: torch.device
-    seed: int
-    max_steps: int
-    val_every_n_steps: int
-    grad_clip_norm: float | None
-    patience_validations: int
-    min_delta_perc: float
-
-
-@dataclass(frozen=True, slots=True)
-class ValidationReport:
-    """Metrics from one scheduled validation check."""
-
-    step: int
-    train_metrics: Loss
-    val_metrics: Loss
-    # Every pseval metric's mean over the validation prefixes.
-    scores: dict[str, float]
-    scoring_seconds: float
-
-
-class TrainingObserver(Protocol):
-    """Receive training updates while the current model weights are still available."""
-
-    def on_batch(self, step: int, metrics: Loss, batch_size: int, learning_rate: float) -> None:
-        """Handle metrics for one optimized batch."""
-
-    def on_validation(self, report: ValidationReport) -> None:
-        """Handle metrics from one validation check."""
-
-    def on_best(self, model: UncertaintyAwareEncoderDecoder, step: int, score: float) -> None:
-        """Handle a newly selected model before the next optimizer step."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,19 +57,22 @@ def train(
     train_loader: DataLoader,
     validation_loader: DataLoader,
     score: Callable[[], dict[str, float]],
-    settings: TrainingSettings,
-    observer: TrainingObserver,
+    config: DictConfig,
+    on_best: Callable[[int, float], None],
 ) -> TrainingResult:
-    """Optimize the model and select it by its validation `SELECTION_METRIC`.
+    """Optimize the model, logging to the active W&B run, and select it by its validation
+    `SELECTION_METRIC`.
 
     Args:
-        model: The model, already on the configured device.
+        model: The model, already on `config.device`.
         train_loader: Training batches, reshuffled every epoch.
         validation_loader: The fixed validation pairs the loss is reported on.
         score: Scores the current weights on the fixed validation prefixes, through
             `pseval.validate`.
-        settings: Optimization, validation, and stopping settings.
-        observer: Synchronous callbacks for batch, validation, and best-model updates.
+        config: The run configuration: `optimizer`, `training`, `early_stopping`, `device`, and
+            `seed`.
+        on_best: Called with the step and score of each newly selected model, before the next
+            optimizer step.
 
     Returns:
         The selected step, score, and stop summary.
@@ -126,11 +80,13 @@ def train(
     Raises:
         ValueError: If the selection metric is not finite.
     """
+    device = torch.device(config.device)
+    settings, stopping = config.training, config.early_stopping
     optimizer = optim.AdamW(
         model.parameters(),
-        lr=settings.optimizer.lr,
-        betas=settings.optimizer.betas,
-        weight_decay=settings.optimizer.weight_decay,
+        lr=config.optimizer.lr,
+        betas=tuple(config.optimizer.betas),
+        weight_decay=config.optimizer.weight_decay,
     )
     step = 0
     best_step = 0
@@ -144,7 +100,7 @@ def train(
         except StopIteration:
             train_iterator = iter(train_loader)
             batch = next(train_iterator)
-        batch = batch.to(settings.device)
+        batch = batch.to(device)
         step += 1
 
         model.train()
@@ -153,11 +109,11 @@ def train(
         loss.backward()
         if settings.grad_clip_norm is not None:
             torch.nn.utils.clip_grad_norm_(model.parameters(), settings.grad_clip_norm)
-        learning_rate = settings.optimizer.lr * _lr_factor(
+        learning_rate = config.optimizer.lr * _lr_factor(
             step,
-            warmup_steps=settings.optimizer.warmup_steps,
+            warmup_steps=config.optimizer.warmup_steps,
             max_steps=settings.max_steps,
-            min_lr_factor=settings.optimizer.min_lr_factor,
+            min_lr_factor=config.optimizer.min_lr_factor,
         )
         for group in optimizer.param_groups:
             group['lr'] = learning_rate
@@ -166,43 +122,48 @@ def train(
         batch_size = batch.suffix.activities.size(dim=0)
         interval_totals += metrics
         seen += batch_size
-        observer.on_batch(step, metrics, batch_size, learning_rate)
+        wandb.log(
+            {'train/lr': learning_rate}
+            | {f'train/{key}': value for key, value in (metrics / batch_size).as_metrics().items()},
+            step=step,
+        )
         if step % settings.val_every_n_steps != 0 and step != settings.max_steps:
             continue
 
-        val_metrics = validate_loss(
-            model, validation_loader, device=settings.device, seed=settings.seed
-        )
+        val_metrics = validate_loss(model, validation_loader, device=device, seed=config.seed)
         started = perf_counter()
         scores = score()
-        observer.on_validation(
-            ValidationReport(
-                step=step,
-                train_metrics=interval_totals / seen,
-                val_metrics=val_metrics,
-                scores=scores,
-                scoring_seconds=perf_counter() - started,
-            )
+        scoring_seconds = perf_counter() - started
+        wandb.log(
+            {f'val/{key}': value for key, value in val_metrics.as_metrics().items()}
+            | {f'validation/{key}': value for key, value in scores.items()},
+            step=step,
+        )
+        selection = scores[SELECTION_METRIC]
+        print(
+            f'Step {step:>{len(str(settings.max_steps))}}/{settings.max_steps}  '
+            f'train {(interval_totals / seen).loss:.4f}  val {val_metrics.loss:.4f}  '
+            f'{SELECTION_METRIC} {selection:.4f}  scoring {scoring_seconds:.1f}s',
+            flush=True,
         )
         interval_totals, seen = Loss(), 0
-        selection = scores[SELECTION_METRIC]
         if not math.isfinite(selection):
             raise ValueError(f'Nonfinite validation {SELECTION_METRIC}: {selection}')
         if best_score == math.inf or best_score - selection > abs(best_score) * (
-            settings.min_delta_perc
+            stopping.min_delta_perc
         ):
             checks_without_improvement = 0
         else:
             checks_without_improvement += 1
         if selection < best_score:
             best_score, best_step = selection, step
-            observer.on_best(model, step, selection)
-        if checks_without_improvement >= settings.patience_validations:
+            on_best(step, selection)
+        if checks_without_improvement >= stopping.patience_validations:
             return TrainingResult(
                 best_step=best_step,
                 selection_score=best_score,
                 step=step,
-                reason=f'no validation improvement for {settings.patience_validations} checks',
+                reason=f'no validation improvement for {stopping.patience_validations} checks',
             )
     return TrainingResult(
         best_step=best_step, selection_score=best_score, step=step, reason='reached max_steps'

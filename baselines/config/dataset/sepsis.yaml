@@ -38,3 +38,16 @@ data:
   - Leucocytes
   - ts_start
   log_scaled_target_inter_event_time: false
+# The training regime of this dataset, over the defaults of train.yaml.
+optimizer:
+  lr: 0.0003
+  warmup_steps: 150
+training:
+  max_steps: 6000
+  val_every_n_steps: 120
+  validation_pairs: 10000
+  validation_prefixes: 2000
+early_stopping:
+  patience_validations: 10
+dataloader:
+  batch_size: 256

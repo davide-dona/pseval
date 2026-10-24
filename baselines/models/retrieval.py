@@ -1,10 +1,11 @@
 import numpy as np
 
+from baselines.data.codec import ActivityColumn
 from pseval import Draw, Forecast, Log, PrefixBatch, SuffixModel
 from pseval.data import ACTIVITY_KEY
 
-# Marks the start of a trace in a context, below every activity index.
-_START = -1
+# Marks the start of a trace in a context, below every activity row.
+_START = np.int32(-1)
 
 
 class Retrieval(SuffixModel):
@@ -27,39 +28,43 @@ class Retrieval(SuffixModel):
             vocabulary: The benchmark vocabulary. A prefix activity outside it is read as its
                 `UNK` entry, which no train context holds.
         """
-        self._index = {name: code for code, name in enumerate(vocabulary)}
-        self._unknown = self._index['UNK']
-        self._names = train.events[ACTIVITY_KEY].astype(str).to_numpy(dtype=object)
+        self._activity = ActivityColumn(vocabulary=vocabulary)
+        events = train.events
+        self._names = events[ACTIVITY_KEY].astype(str).to_numpy(dtype=object)
         self._minutes = train.inter_event_minutes()
-        codes = np.fromiter((self._index[name] for name in self._names), np.int32, len(self._names))
+        codes = self._activity.encode(events[ACTIVITY_KEY]).astype(np.int32)
         offsets = train.case_offsets
-        lengths = np.diff(offsets)
-        # [N] The case and length of every cut, each case's cuts by ascending length.
-        case = np.repeat(np.arange(len(lengths)), lengths - 1)
-        cut = np.concatenate([np.zeros(0, np.int64), *(np.arange(1, n) for n in lengths)])
-        # [N] The first and past-the-end rows of every cut's suffix.
-        self._starts = offsets[case] + cut
+        cuts = train.cuts()
+        case = train.case_indices(cuts)
+        # [N] The first row of every cut's case, and the first and past-the-end rows of its suffix.
+        case_starts = offsets[case]
+        self._starts = case_starts + np.fromiter(
+            (cut.prefix_len for cut in cuts), np.int64, len(cuts)
+        )
         self._stops = offsets[case + 1]
-        depth = np.arange(int(cut.max()) + 1)
-        positions = self._starts[:, None] - 1 - depth[None, :]  # [N, W]
-        # Position `d` holds the activity `d + 1` events before the cut, `_START` from the trace
-        # start onwards.
-        contexts = np.where(
-            positions >= offsets[case][:, None], codes[np.maximum(positions, 0)], _START
-        ).astype(np.int32)
+        # Depth `d` holds the activity `d + 1` events before the cut, `_START` from the trace start
+        # onwards, one int32 column at a time.
+        columns = []
+        for depth in range(int((self._starts - case_starts).max()) + 1):
+            positions = self._starts - 1 - depth
+            columns.append(
+                np.where(positions >= case_starts, codes[np.maximum(positions, 0)], _START)
+            )
         # Sorted so the cuts sharing any context prefix are one contiguous range. `lexsort` sorts
         # by its last key first, so depth 0 goes last.
-        self._order = np.lexsort(contexts.T[::-1])
+        self._order = np.lexsort(columns[::-1])
         # Column-major, so each depth reads as one contiguous column.
-        self._contexts = np.asfortranarray(contexts[self._order])
+        self._contexts = np.empty((len(cuts), len(columns)), dtype=np.int32, order='F')
+        for depth, column in enumerate(columns):
+            self._contexts[:, depth] = column[self._order]
 
     def sample(self, prefixes: PrefixBatch, num_samples: int, *, seed: int) -> list[Forecast]:
         """Draw `num_samples` matched train suffixes per prefix, independently with replacement."""
         rng = np.random.default_rng(seed)
         forecasts = []
         for row in range(len(prefixes)):
-            names = prefixes[row][ACTIVITY_KEY].astype(str)
-            lower, upper = self._match([self._index.get(name, self._unknown) for name in names])
+            names = prefixes[row][ACTIVITY_KEY]
+            lower, upper = self._match(self._activity.encode(names).tolist())
             drawn = self._order[lower + rng.integers(upper - lower, size=num_samples)]
             forecasts.append(
                 Forecast(

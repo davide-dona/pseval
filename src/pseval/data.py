@@ -85,6 +85,13 @@ class Log:
             for prefix_len in range(int(start), int(length))
         ]
 
+    def case_indices(self, cuts: Sequence[Cut]) -> np.ndarray:
+        """`[len(cuts)]` int64 index of each cut's case, cuts of this log.
+
+        Cut `j` cuts the case at rows `case_offsets[i]:case_offsets[i + 1]`, `i` its index.
+        """
+        return np.fromiter((self._case_index[cut.case_id] for cut in cuts), np.int64, len(cuts))
+
     def prefixes(self, cuts: Sequence[Cut]) -> 'PrefixBatch':
         """Gather the observed events of each prefix, in the order of `cuts`, cuts of this log."""
         rows = [self._rows(cut) for cut in cuts]

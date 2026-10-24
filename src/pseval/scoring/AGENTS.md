@@ -12,7 +12,7 @@ to the numbers a paper reports. It also scores validation prefixes in memory for
 | `summary.py` | `Summary`: equal-weight means overall and by prefix and true suffix length. |
 | `skill.py` | `skill`: each proper score against the benchmark's unconditional reference. |
 | `reference.py` | `Unconditional`, the reference model whose scores every benchmark stores. |
-| `validation.py` | `validate`: in-memory means over the validation prefixes, every one or a given subset of cuts, writing no file. |
+| `validation.py` | `validate`: in-memory means over the validation prefixes, every one or a seeded subset, writing no file. |
 
 ## Contracts
 
@@ -30,4 +30,6 @@ to the numbers a paper reports. It also scores validation prefixes in memory for
   reported number.
 - `skill` is `1 - mean / reference mean` over `PROPER_SCORES` and requires the same prefixes as
   the reference. Ranking by skill equals ranking by the mean.
-- `validate` reads only the validation split. Selection never touches test prefixes.
+- `validate` reads only the validation split. Selection never touches test prefixes. Its
+  `max_prefixes` subset is drawn from `seed`, so every model selected with one seed reads the
+  same prefixes, and it batches prefixes sorted by length as `generate` does.

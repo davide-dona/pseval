@@ -4,15 +4,15 @@ import hydra
 from omegaconf import DictConfig
 
 import pseval
-from baselines.pipelines.helpers import load_benchmark, output_path
+from baselines.pipelines.helpers import output_path
 
 
 def run(config: DictConfig) -> Path:
-    """Score a generations file through `pseval.score` and print its means and skill."""
-    generations = Path(config.generations)
+    """Score a generation run through `pseval.score` and print its means and skill."""
+    generations = Path(config.generate_dir) / 'generations.parquet'
     with pseval.GenerationsReader(generations) as reader:
         dataset = reader.record.dataset
-    benchmark = load_benchmark(dataset, config.benchmark_root)
+    benchmark = pseval.load_benchmark(dataset, root=config.benchmark_root)
     path = pseval.score(
         generations, benchmark, path=output_path('scores.parquet'), workers=config.workers
     )

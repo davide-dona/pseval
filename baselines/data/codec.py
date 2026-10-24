@@ -3,21 +3,21 @@ from functools import cached_property
 
 import numpy as np
 import pandas as pd
-import torch
 from omegaconf import DictConfig
 from pandas.api.types import is_numeric_dtype
 
+import pseval
 from baselines.data.features import derive_features
-from pseval import Log
 from pseval.data import INTER_EVENT_MINUTES_KEY, RESOURCE_KEY
 
-# Special tokens. Each follows the vocabulary of whichever channel carries it.
+# Special tokens. Each precedes the vocabulary of whichever channel carries it.
 PAD_TOKEN = 'PAD'  # Padding, aligning sequences to one width in a batch
 EOT_TOKEN = 'EOT'  # End Of Trace
 SOS_TOKEN = 'SOS'  # Start Of Suffix, the first decoder input
 UNK_TOKEN = 'UNK'  # A value the train split did not hold
 
-# The special tokens of the resource and categorical feature channels, in index order.
+# The special tokens of each channel, in index order. PAD is row 0 of every table.
+ACTIVITY_TOKENS = (PAD_TOKEN, EOT_TOKEN, SOS_TOKEN)
 RESOURCE_TOKENS = (PAD_TOKEN, UNK_TOKEN)
 FEATURE_TOKENS = (UNK_TOKEN,)
 
@@ -27,46 +27,39 @@ MISSING_FEATURE = '<MISSING>'
 
 @dataclass(frozen=True)
 class ActivityColumn:
-    """The activity channel: each benchmark vocabulary name at its position, then PAD, EOT, SOS.
+    """The activity channel: PAD, EOT, and SOS, then each benchmark vocabulary name in order.
 
-    The benchmark vocabulary ends with `UNK`, so an activity unseen in train is a modeled class
-    like any other, and every index below `pad_index` decodes to a name pseval accepts.
+    The benchmark vocabulary ends with its `UNK` entry, so an activity unseen in train is a modeled
+    class like any other, and every row from `first_name` on decodes to a name pseval accepts.
     """
 
     vocabulary: tuple[str, ...]
 
-    @property
-    def pad_index(self) -> int:
-        return len(self.vocabulary)
-
-    @property
-    def eot_index(self) -> int:
-        return len(self.vocabulary) + 1
-
-    @property
-    def sos_index(self) -> int:
-        return len(self.vocabulary) + 2
+    pad_index = ACTIVITY_TOKENS.index(PAD_TOKEN)
+    eot_index = ACTIVITY_TOKENS.index(EOT_TOKEN)
+    sos_index = ACTIVITY_TOKENS.index(SOS_TOKEN)
+    first_name = len(ACTIVITY_TOKENS)
 
     @property
     def num_rows(self) -> int:
         """Rows of the activity embedding table and classes of the activity head."""
-        return len(self.vocabulary) + 3
+        return self.first_name + len(self.vocabulary)
 
     @cached_property
-    def unk_index(self) -> int:
-        return self.vocabulary.index(UNK_TOKEN)
+    def _rows(self) -> dict[str, int]:
+        return {name: self.first_name + i for i, name in enumerate(self.vocabulary)}
 
     @cached_property
-    def to_index(self) -> dict[str, int]:
-        return {name: index for index, name in enumerate(self.vocabulary)}
+    def _names(self) -> np.ndarray:
+        return np.array(self.vocabulary, dtype=object)
 
     def encode(self, names: pd.Series) -> np.ndarray:
-        """`[len(names)]` int64 vocabulary positions, `UNK` for a name outside the vocabulary."""
-        return names.astype(str).map(self.to_index).fillna(self.unk_index).to_numpy(np.int64)
+        """`[len(names)]` int64 rows, the vocabulary's last entry, `UNK`, for a name outside it."""
+        return names.astype(str).map(self._rows).fillna(self.num_rows - 1).to_numpy(np.int64)
 
-    def decode(self, indices: np.ndarray) -> tuple[str, ...]:
-        """The names of vocabulary positions, each below `pad_index`."""
-        return tuple(self.vocabulary[int(index)] for index in indices)
+    def decode(self, rows: np.ndarray) -> np.ndarray:
+        """The names of rows `[...]`, each from `first_name` on, as an object array `[...]`."""
+        return self._names[rows - self.first_name]
 
 
 @dataclass(frozen=True)
@@ -119,12 +112,8 @@ class CategoricalColumn:
         return {value: start + i for i, value in enumerate(self.vocab)}
 
     @property
-    def pad_index(self) -> int:
-        return self._index_of(PAD_TOKEN)
-
-    @property
     def unk_index(self) -> int:
-        return self._index_of(UNK_TOKEN)
+        return self.offset + self.special_tokens.index(UNK_TOKEN)
 
     def encode(self, events: pd.DataFrame) -> np.ndarray:
         """`[len(events)]` int64 rows of this channel's values, `UNK` for one unseen in train."""
@@ -134,16 +123,6 @@ class CategoricalColumn:
             .fillna(self.unk_index)
             .to_numpy(dtype=np.int64)
         )
-
-    def _index_of(self, token: str) -> int:
-        """The row of one special token.
-
-        Raises:
-            ValueError: If this channel does not carry that token.
-        """
-        if token not in self.special_tokens:
-            raise ValueError(f'column "{self.column}" carries no {token} token')
-        return self.offset + self.special_tokens.index(token)
 
 
 @dataclass(frozen=True)
@@ -183,14 +162,21 @@ class NumericColumn:
         std = float(scaled.std())
         return cls(column=column, log=log, mean=float(scaled.mean()), std=std if std > 0 else 1.0)
 
+    def standardize[T](self, scaled: T) -> T:
+        """Standardize values already through the log1p, if any: arrays or tensors alike."""
+        return (scaled - self.mean) / self.std
+
+    def unstandardize[T](self, standardized: T) -> T:
+        """Read standardized values back on the log1p scale, if any: arrays or tensors alike."""
+        return standardized * self.std + self.mean
+
     def normalize(self, values: np.ndarray) -> np.ndarray:
         """Standardize raw values against the train statistics, as float32, unbounded."""
-        scaled = np.log1p(values) if self.log else values
-        return ((scaled - self.mean) / self.std).astype(np.float32)
+        return self.standardize(np.log1p(values) if self.log else values).astype(np.float32)
 
     def denormalize(self, normalized: np.ndarray) -> np.ndarray:
         """Read standardized values back as the raw float64 quantity they came from."""
-        scaled = np.asarray(normalized, dtype=np.float64) * self.std + self.mean
+        scaled = self.unstandardize(np.asarray(normalized, dtype=np.float64))
         return np.expm1(scaled) if self.log else scaled
 
     def encode(self, events: pd.DataFrame) -> np.ndarray:
@@ -217,27 +203,19 @@ class Codec:
     # The configured event features, sorted by dtype into the two kinds.
     categorical_features: tuple[CategoricalColumn, ...]
     numeric_features: tuple[NumericColumn, ...]
-    # The longest case the benchmark keeps, which sizes every sequence tensor.
+    # The benchmark's length cap, the most events a draw may hold.
     max_trace_length: int
 
     @classmethod
-    def fit(
-        cls,
-        train: Log,
-        *,
-        vocabulary: tuple[str, ...],
-        max_trace_length: int,
-        data_config: DictConfig,
-    ) -> 'Codec':
-        """Fit the codec on the train split.
+    def fit(cls, benchmark: pseval.Benchmark, data_config: DictConfig) -> 'Codec':
+        """Fit the codec on the benchmark's train split, with its vocabulary and length cap.
 
         Args:
-            train: The benchmark's train split.
-            vocabulary: The benchmark vocabulary, every name a draw may hold.
-            max_trace_length: The benchmark's length cap, its longest case kept.
+            benchmark: The benchmark.
             data_config: The `data` section: the feature columns, which of them are log-scaled,
                 and whether the target inter-event time is.
         """
+        train = benchmark.train
         events = derive_features(train.events, train.case_offsets)
         log_scaled = set(data_config.log_scaled_features)
         categorical: list[CategoricalColumn] = []
@@ -254,7 +232,7 @@ class Codec:
                 categorical.append(feature)
                 offset += feature.num_rows
         return cls(
-            activity=ActivityColumn(vocabulary=vocabulary),
+            activity=ActivityColumn(vocabulary=benchmark.vocabulary),
             resource=CategoricalColumn.fit(
                 events, column=RESOURCE_KEY, special_tokens=RESOURCE_TOKENS
             ),
@@ -268,7 +246,7 @@ class Codec:
             ),
             categorical_features=tuple(categorical),
             numeric_features=tuple(numeric),
-            max_trace_length=max_trace_length,
+            max_trace_length=benchmark.max_suffix_length,
         )
 
     @property
@@ -276,25 +254,33 @@ class Codec:
         """Rows of the table every categorical feature shares: one PAD, then a block each."""
         return 1 + sum(feature.num_rows for feature in self.categorical_features)
 
-    def encode_categorical_features(self, events: pd.DataFrame) -> torch.Tensor:
+    def encode_categorical_features(self, events: pd.DataFrame) -> np.ndarray:
         """`[len(events), num_categorical]` int64 shared-table rows."""
-        return torch.from_numpy(
-            _columns([feature.encode(events) for feature in self.categorical_features], len(events))
-        ).long()
+        return _columns(
+            [feature.encode(events) for feature in self.categorical_features],
+            rows=len(events),
+            dtype=np.int64,
+        )
 
-    def encode_numeric_features(self, events: pd.DataFrame) -> tuple[torch.Tensor, torch.Tensor]:
+    def encode_numeric_features(self, events: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
         """`[len(events), num_numeric]` float32 standardized values and presence flags."""
-        values = [feature.encode(events) for feature in self.numeric_features]
-        present = [feature.present(events) for feature in self.numeric_features]
         return (
-            torch.from_numpy(_columns(values, len(events))).float(),
-            torch.from_numpy(_columns(present, len(events))).float(),
+            _columns(
+                [feature.encode(events) for feature in self.numeric_features],
+                rows=len(events),
+                dtype=np.float32,
+            ),
+            _columns(
+                [feature.present(events) for feature in self.numeric_features],
+                rows=len(events),
+                dtype=np.float32,
+            ),
         )
 
 
-def _columns(columns: list[np.ndarray], rows: int) -> np.ndarray:
+def _columns(columns: list[np.ndarray], *, rows: int, dtype: type) -> np.ndarray:
     """Stack per-column arrays `[rows]` into `[rows, len(columns)]`, empty when there are none."""
-    return np.stack(columns, axis=1) if columns else np.zeros((rows, 0))
+    return np.stack(columns, axis=1) if columns else np.zeros((rows, 0), dtype=dtype)
 
 
 def _text(values: pd.Series) -> pd.Series:
