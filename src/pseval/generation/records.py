@@ -1,9 +1,11 @@
 import math
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator
 from dataclasses import dataclass
 from functools import cached_property
 
 import numpy as np
+
+from pseval.data import SuffixDraws
 
 
 @dataclass(frozen=True, eq=False)
@@ -40,14 +42,14 @@ class Draws:
     truncated: np.ndarray
 
     @classmethod
-    def of(cls, drawn: Sequence[DecodedEvents], *, truncated: Sequence[bool]) -> 'Draws':
-        """Gather one prefix's draws."""
+    def of(cls, draws: SuffixDraws) -> 'Draws':
+        """Gather one prefix's draws from a model's."""
         return cls(
-            activities=tuple(events.activities for events in drawn),
+            activities=tuple(tuple(names) for names in draws.activities),
             inter_event_time_minutes=np.concatenate(
-                [np.zeros(0), *(events.inter_event_time_minutes for events in drawn)]
+                [np.zeros(0), *(np.asarray(minutes, dtype=np.float64) for minutes in draws.minutes)]
             ),
-            truncated=np.asarray(truncated, dtype=bool),
+            truncated=np.asarray(draws.truncated, dtype=bool),
         )
 
     def __len__(self) -> int:
@@ -77,18 +79,3 @@ class Draws:
         return np.bincount(
             draw_of_event, weights=self.inter_event_time_minutes, minlength=len(self)
         )
-
-
-@dataclass(frozen=True, eq=False)
-class Generation:
-    """One prefix's drawn suffixes and the observed suffix they are scored against."""
-
-    case_id: str
-    prefix_activities: tuple[str, ...]
-    draws: Draws
-    observed: DecodedEvents
-
-    @property
-    def prefix_len(self) -> int:
-        """How many events the prefix holds."""
-        return len(self.prefix_activities)

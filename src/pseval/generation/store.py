@@ -10,7 +10,7 @@ import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 from pseval.data import PrefixKey
-from pseval.generation.records import Draws, Generation
+from pseval.generation.records import Draws
 from pseval.record import Record
 
 # Activity names, one per event, dictionary encoded on disk.
@@ -48,11 +48,10 @@ _FLOAT_LEAVES = ['generated_draws.list.element.inter_event_time_minutes.list.ele
 _TRUNCATED_LEAF = 'generated_draws.list.element.truncated'
 
 
-def _row(generation: Generation) -> dict:
-    draws = generation.draws
+def _row(key: PrefixKey, draws: Draws) -> dict:
     return {
-        'case_id': generation.case_id,
-        'prefix_len': generation.prefix_len,
+        'case_id': key[0],
+        'prefix_len': key[1],
         'generated_draws': [
             {
                 'activities': list(events.activities),
@@ -142,9 +141,9 @@ class GenerationWriter:
         if exception_type is not None:
             self._path.unlink(missing_ok=True)
 
-    def write(self, generations: Sequence[Generation]) -> None:
-        """Write one batch of prefixes as one row group."""
-        rows = [_row(generation) for generation in generations]
+    def write(self, draws: Sequence[tuple[PrefixKey, Draws]]) -> None:
+        """Write one batch of prefixes and their draws as one row group."""
+        rows = [_row(key, prefix_draws) for key, prefix_draws in draws]
         self._writer.write_table(table=pa.Table.from_pylist(mapping=rows, schema=SCHEMA))
 
 

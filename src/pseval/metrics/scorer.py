@@ -1,5 +1,5 @@
 import json
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from functools import cached_property
 from itertools import pairwise
@@ -10,10 +10,10 @@ import numpy as np
 import pandas as pd
 from declarray import Checker, DeclareModel, mine
 
-from pseval.data import ACTIVITY_KEY, CASE_KEY, Log
-from pseval.generation.records import Generation
+from pseval.data import ACTIVITY_KEY, CASE_KEY, Log, PrefixKey
+from pseval.generation.records import DecodedEvents, Draws
 from pseval.metrics.columns import METRIC_KEYS, PrefixScores
-from pseval.metrics.inputs import MetricInputs
+from pseval.metrics.inputs import Forecast, MetricInputs
 from pseval.metrics.signature import SignatureKernel
 
 # The vocabulary entry an activity unseen in the train split is scored as.
@@ -109,19 +109,18 @@ class Scorer:
         """A Declare checker of activity name traces."""
         return Checker(self.declare)
 
-    def require_draws(self, generation: Generation, *, num_samples: int) -> None:
+    def require_draws(self, key: PrefixKey, draws: Draws, *, num_samples: int) -> None:
         """Require one prefix's draws to honor the protocol contract.
 
         Args:
-            generation: The prefix and its draws.
+            key: The prefix.
+            draws: Its draws.
             num_samples: How many draws the prefix was asked for.
 
         Raises:
             ValueError: On `num_samples` below two, a wrong draw count, an activity outside the
                 vocabulary, a negative or non-finite time, or a draw longer than the cap.
         """
-        draws = generation.draws
-        key = (generation.case_id, generation.prefix_len)
         if num_samples < 2:
             raise ValueError('Every metric needs at least two draws per prefix')
         if len(draws) != num_samples:
@@ -135,23 +134,53 @@ class Scorer:
         if not np.isfinite(minutes).all() or (minutes < 0).any():
             raise ValueError(f'{key} has a negative or non-finite draw time')
 
-    def score(self, generations: Sequence[Generation]) -> pd.DataFrame:
-        """Score a batch of prefixes.
+    def score(
+        self, log: Log, draws: Sequence[tuple[PrefixKey, Draws]], *, num_samples: int
+    ) -> pd.DataFrame:
+        """Score a batch of prefixes against their observed suffixes.
+
+        Observed activities outside the vocabulary, unseen in train, are scored as `UNK`.
 
         Args:
-            generations: Prefixes with their draws and observed suffixes.
+            log: The split the prefixes were cut from.
+            draws: Each prefix and its draws.
+            num_samples: How many draws each prefix was asked for.
 
         Returns:
             One row per prefix in input order, one float64 column per `METRIC_KEYS` entry.
+
+        Raises:
+            ValueError: If the draws break the protocol contract, as `require_draws` checks.
         """
+        for key, prefix_draws in draws:
+            self.require_draws(key, prefix_draws, num_samples=num_samples)
         batch = MetricInputs.of_batch(
-            generations, checker=self.checker, kernel=self.kernel, axes=self.axes
+            [self._forecast(log, key, prefix_draws) for key, prefix_draws in draws],
+            checker=self.checker,
+            kernel=self.kernel,
+            axes=self.axes,
         )
         return pd.DataFrame(
             [PrefixScores.of(inputs) for inputs in batch],
             columns=list(METRIC_KEYS),
             dtype=np.float64,
         )
+
+    def _forecast(self, log: Log, key: PrefixKey, draws: Draws) -> Forecast:
+        """Join one prefix's draws with its prefix and observed suffix from `log`."""
+        activities, minutes = log.suffix_trace(key)
+        return Forecast(
+            case_id=key[0],
+            prefix_activities=self._known(log.prefix_activities(key)),
+            draws=draws,
+            observed=DecodedEvents(
+                activities=self._known(activities), inter_event_time_minutes=minutes
+            ),
+        )
+
+    def _known(self, names: Iterable[str]) -> tuple[str, ...]:
+        """The names, those outside the vocabulary as `UNK`."""
+        return tuple(name if name in self.axes else UNK for name in names)
 
 
 def _fit_kernel(train: Log, *, alphabet: int) -> SignatureKernel:
