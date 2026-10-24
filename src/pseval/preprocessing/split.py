@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from pseval.data import CASE_KEY, TIMESTAMP_KEY
+from pseval.data import CASE_KEY, INTER_EVENT_MINUTES_KEY, TIMESTAMP_KEY
 
 
 def sort_log(log: pd.DataFrame) -> pd.DataFrame:
@@ -20,20 +20,28 @@ def sort_log(log: pd.DataFrame) -> pd.DataFrame:
     return log.drop(columns='_case_rank').reset_index(drop=True)
 
 
+def add_inter_event_minutes(log: pd.DataFrame) -> pd.DataFrame:
+    """Add the minutes since the previous event of the same case, zero at a case's first event.
+
+    Args:
+        log: The log, each case's rows consecutive and in time order.
+
+    Returns:
+        A copy with the `INTER_EVENT_MINUTES_KEY` column in float64.
+    """
+    delta = log.groupby(CASE_KEY, sort=False)[TIMESTAMP_KEY].diff()
+    minutes = (delta.dt.total_seconds() / 60.0).fillna(0.0).astype(np.float64)
+    return log.assign(**{INTER_EVENT_MINUTES_KEY: minutes})
+
+
 def out_of_time_split(
     log: pd.DataFrame, *, validation_fraction: float, test_fraction: float, seed: int
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Series]:
-    """Split a log by time into train and test, and draw validation at random from train.
+    """Split a log out of time into train and test, and sample validation from train.
 
-    The separation time is the start of the case that begins once `1 - test_fraction` of them
-    already have. Train keeps every case finished before it. Test keeps every case still running
-    at it, so a case running across it is a test case whose earlier prefixes a training run could
-    already have seen; those prefixes are withheld from scoring through its first cut rather than
-    the case being dropped.
-
-    Validation is a random sample of whole training cases. A time slice ending at the separation
-    would lose every long case starting inside it to test, so its prefixes would face far shorter
-    remaining times than test's.
+    The separation is the start of the case at the `1 - test_fraction` quantile of case starts.
+    Train keeps the cases finished before it, test the cases still running at it, and validation
+    is a seeded random sample of whole train cases.
 
     Args:
         log: The filtered log, sorted by case start and then by timestamp.
@@ -45,29 +53,36 @@ def out_of_time_split(
         `(train, validation, test, first_cuts)`: row subsets of `log`, and the first cut of every
         test case, indexed by case.
     """
+    # Get the start and stop timestamps of every case, indexed by case.
     edges = log.groupby(CASE_KEY)[TIMESTAMP_KEY].agg(['min', 'max'])
     starts_ts, stops_ts = edges['min'], edges['max']
 
+    # The first test case is the one whose start is at the `1 - test_fraction` quantile of starts.
     first_test_case = int(len(edges) * (1 - test_fraction))
     separation_ts = np.sort(starts_ts.values)[first_test_case]
 
+    # The train cases are those finishing before the first test case's start
     train_cases = stops_ts.index[stops_ts.values < separation_ts]
     train = log[log[CASE_KEY].isin(train_cases)]
 
+    # The test cases are those still running at the separation, including the crossing ones
+    # that started before it.
     test_cases = stops_ts.index[stops_ts.values >= separation_ts]
+    # Avoid evaluatinf the prefixes of a trace that started before the separation, 
+    # since they would be predicted with training data from their future. 
     crossing = test_cases.difference(starts_ts.sort_values().index[first_test_case:])
     test = log[log[CASE_KEY].isin(test_cases)]
     first_cuts = _first_cuts(test, separation_ts=separation_ts, crossing=crossing)
 
-    # The candidates are taken in log order, so the draw depends on the seed alone.
+    # The validation cases are a seeded random sample of the train cases.
     validation_share = validation_fraction / (1 - test_fraction)
     train_cases = train[CASE_KEY].unique()
     rng = np.random.default_rng(seed)
     validation_cases = rng.choice(
         train_cases, size=int(len(train_cases) * validation_share), replace=False
     )
-
     validation = train[train[CASE_KEY].isin(validation_cases)]
+    # The remaining train cases are those not drawn for validation
     train = train[~train[CASE_KEY].isin(validation_cases)]
     return train, validation, test, first_cuts
 
@@ -78,13 +93,9 @@ def _first_cuts(
     """Each case's first cut, indexed by case: on the crossing cases the first one whose prefix
     reaches past the separation, and 1 on every other case."""
     rows = split[split[CASE_KEY].isin(crossing)]
-    # A cut of k takes the first k events, so a bound is the 1-based position of the event the
-    # prefix has to reach.
     positions = rows.groupby(CASE_KEY).cumcount() + 1
-
-    # Strictly after the separation: an event landing exactly on it is one a training case could
-    # still have been running through. Compared as numpy values, since a tz-aware column and a
-    # numpy timestamp are not comparable as pandas objects.
+    
+    # The first cut is the first event whose timestamp is after the separation, or 1 if none.
     selected = rows[TIMESTAMP_KEY].values > separation_ts
     bounds = positions[selected].groupby(rows[CASE_KEY][selected]).min()
     cases = pd.Index(split[CASE_KEY].unique())

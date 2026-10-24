@@ -1,7 +1,7 @@
 # Baselines
 
 The trained baselines reported with pseval: Retrieval, U-ED-Transformer, and U-ED-LSTM. The
-unconditional reference lives in `pseval.reference`.
+unconditional reference lives in `pseval.scoring.reference`.
 
 Baselines use pseval exactly as an external user does: through its public API, fitting on
 `Benchmark.train` and `Benchmark.validation`, selecting with `pseval.validate`, and generating and

@@ -6,13 +6,23 @@ Evaluation protocol for probabilistic suffix prediction in predictive process mo
 uv add git+https://github.com/davide-dona/pseval@v1.0.0
 ```
 
+Train your model on `benchmark.train` and `benchmark.validation` however you like, comparing
+candidates with `pseval.validate`. pseval only calls its `sample`, then scores the test draws.
+
 ```python
 import pseval
 
 benchmark = pseval.load_benchmark('sepsis')
-scores = pseval.evaluate(
-    model, benchmark, directory, selection=pseval.Selection.none(), label='mine'
+model = train(benchmark.train, benchmark.validation)  # yours
+print(pseval.validate(model, benchmark)['signature_kernel_score'])
+
+generations = pseval.generate(
+    model,
+    benchmark,
+    directory / 'generations.parquet',
+    label='mine',
 )
-print(pseval.read_scores(scores).summary().overall)
-print(pseval.skill(pseval.read_scores(scores), benchmark))
+scores = pseval.read_scores(pseval.score(generations, benchmark))
+print(scores.summary().overall)
+print(pseval.skill(scores, benchmark))
 ```

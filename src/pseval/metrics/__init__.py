@@ -1,5 +1,4 @@
-from pseval.metrics import definitions
-from pseval.metrics.registry import METRICS, Direction, Metric, MetricGroup, Owner
+from pseval.metrics.columns import METRIC_KEYS, PROPER_SCORES, PrefixScores
 from pseval.metrics.scorer import Scorer
 
-__all__ = ['METRICS', 'Direction', 'Metric', 'MetricGroup', 'Owner', 'Scorer', 'definitions']
+__all__ = ['METRIC_KEYS', 'PROPER_SCORES', 'PrefixScores', 'Scorer']
