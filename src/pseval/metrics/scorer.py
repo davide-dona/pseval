@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from declarray import Checker, DeclareModel, mine
 
-from pseval.data import ACTIVITY_KEY, CASE_KEY, Forecast, Log, PrefixKey, Suffix
+from pseval.data import ACTIVITY_KEY, CASE_KEY, Cut, Forecast, Log, Suffix
 from pseval.metrics.columns import METRIC_KEYS, PrefixScores
 from pseval.metrics.inputs import MetricInputs, Pairing
 from pseval.metrics.signature import SignatureKernel
@@ -64,23 +64,20 @@ class Scorer:
             raise ValueError(f'The train split holds an activity named {UNK}')
         vocabulary = (*sorted(activities.unique().tolist()), UNK)
         traces = activities.groupby(events[CASE_KEY], sort=False).agg(list).tolist()
+        hard = mine(
+            traces,
+            min_support=declare_hard_min_support,
+            min_confidence=declare_hard_min_confidence,
+            max_cardinality=declare_max_cardinality,
+        )
+        soft = _mine_soft(traces, max_cardinality=declare_max_cardinality)
+        kernel = _fit_kernel(train, vocabulary=vocabulary)
         return cls(
             vocabulary=vocabulary,
             max_suffix_length=max_suffix_length,
-            hard=mine(
-                traces,
-                min_support=declare_hard_min_support,
-                min_confidence=declare_hard_min_confidence,
-                max_cardinality=declare_max_cardinality,
-            ),
-            # A support of one trace in the split keeps exactly the rules some trace witnesses.
-            soft=mine(
-                traces,
-                min_support=1.0 / len(traces),
-                min_confidence=0.0,
-                max_cardinality=declare_max_cardinality,
-            ),
-            kernel=_fit_kernel(train, alphabet=len(vocabulary)),
+            hard=hard,
+            soft=soft,
+            kernel=kernel,
         )
 
     def save(self, *, path: Path, hard: Path, soft: Path) -> None:
@@ -127,11 +124,11 @@ class Scorer:
         """A checker of activity name traces against the soft Declare model."""
         return Checker(self.soft)
 
-    def require_forecast(self, key: PrefixKey, forecast: Forecast, *, num_samples: int) -> None:
+    def require_forecast(self, cut: Cut, forecast: Forecast, *, num_samples: int) -> None:
         """Require one prefix's forecast to honor the protocol contract.
 
         Args:
-            key: The prefix.
+            cut: The prefix.
             forecast: Its forecast.
             num_samples: How many draws the prefix was asked for.
 
@@ -142,18 +139,20 @@ class Scorer:
         if num_samples < 2:
             raise ValueError('Every metric needs at least two draws per prefix')
         if len(forecast) != num_samples:
-            raise ValueError(f'{key} has {len(forecast)} draws instead of {num_samples}')
+            raise ValueError(f'{cut} has {len(forecast)} draws instead of {num_samples}')
         if forecast.lengths.max() > self.max_suffix_length:
-            raise ValueError(f'{key} has a draw longer than the cap of {self.max_suffix_length}')
+            raise ValueError(f'{cut} has a draw longer than the cap of {self.max_suffix_length}')
         outside = {name for names in forecast.activities for name in names}.difference(self.axes)
         if outside:
-            raise ValueError(f'{key} has draws outside the vocabulary: {sorted(outside)!r}')
-        minutes = forecast.inter_event_time_minutes
+            raise ValueError(f'{cut} has draws outside the vocabulary: {sorted(outside)!r}')
+        minutes = np.concatenate(
+            [np.zeros(0), *(draw.inter_event_time_minutes for draw in forecast)]
+        )
         if not np.isfinite(minutes).all() or (minutes < 0).any():
-            raise ValueError(f'{key} has a negative or non-finite draw time')
+            raise ValueError(f'{cut} has a negative or non-finite draw time')
 
     def score(
-        self, log: Log, forecasts: Sequence[tuple[PrefixKey, Forecast]], *, num_samples: int
+        self, log: Log, forecasts: Sequence[tuple[Cut, Forecast]], *, num_samples: int
     ) -> pd.DataFrame:
         """Score a batch of prefixes against their observed suffixes.
 
@@ -170,10 +169,10 @@ class Scorer:
         Raises:
             ValueError: If a forecast breaks the protocol contract, as `require_forecast` checks.
         """
-        for key, forecast in forecasts:
-            self.require_forecast(key, forecast, num_samples=num_samples)
+        for cut, forecast in forecasts:
+            self.require_forecast(cut, forecast, num_samples=num_samples)
         batch = MetricInputs.of_batch(
-            [self._pairing(log, key, forecast) for key, forecast in forecasts],
+            [self._pairing(log, cut, forecast) for cut, forecast in forecasts],
             hard_checker=self.hard_checker,
             soft_checker=self.soft_checker,
             kernel=self.kernel,
@@ -185,12 +184,12 @@ class Scorer:
             dtype=np.float64,
         )
 
-    def _pairing(self, log: Log, key: PrefixKey, forecast: Forecast) -> Pairing:
+    def _pairing(self, log: Log, cut: Cut, forecast: Forecast) -> Pairing:
         """Join one prefix's forecast with its prefix and observed suffix from `log`."""
-        activities, minutes = log.suffix_trace(key)
+        activities, minutes = log.suffix_trace(cut)
         return Pairing(
-            case_id=key[0],
-            prefix_activities=self._known(log.prefix_activities(key)),
+            cut=cut,
+            prefix_activities=self._known(log.prefix_activities(cut)),
             forecast=forecast,
             observed=Suffix(activities=self._known(activities), inter_event_time_minutes=minutes),
         )
@@ -200,15 +199,29 @@ class Scorer:
         return tuple(name if name in self.axes else UNK for name in names)
 
 
-def _fit_kernel(train: Log, *, alphabet: int) -> SignatureKernel:
+def _mine_soft(traces: list[list[str]], *, max_cardinality: int) -> DeclareModel:
+    """Mine every rule some train trace witnesses, at confidence 0.
+
+    A support of one trace in the split keeps exactly the witnessed rules, whose non-vacuous
+    satisfaction the support score forecasts.
+    """
+    return mine(
+        traces,
+        min_support=1.0 / len(traces),
+        min_confidence=0.0,
+        max_cardinality=max_cardinality,
+    )
+
+
+def _fit_kernel(train: Log, *, vocabulary: tuple[str, ...]) -> SignatureKernel:
     """Calibrate the signature kernel on the longest suffix of every training case.
 
     A case's longest suffix follows its first event, since every prefix holds at least one event,
-    so its inter-event times are all measured from a real preceding event. The train activities,
-    sorted, take the first axes of the `alphabet`, in vocabulary order.
+    so its inter-event times are all measured from a real preceding event. Each activity takes
+    its vocabulary index as its axis.
     """
-    events = train.events
-    axes = events[ACTIVITY_KEY].astype(str).astype('category').cat.codes.to_numpy(np.int64)
+    index = {name: axis for axis, name in enumerate(vocabulary)}
+    axes = train.events[ACTIVITY_KEY].astype(str).map(index).to_numpy(np.int64)
     minutes = train.inter_event_minutes()
     suffixes = [(axes[a + 1 : b], minutes[a + 1 : b]) for a, b in pairwise(train.case_offsets)]
-    return SignatureKernel.fit(suffixes, alphabet=alphabet)
+    return SignatureKernel.fit(suffixes, alphabet=len(vocabulary))

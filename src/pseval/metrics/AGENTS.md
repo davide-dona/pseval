@@ -39,7 +39,7 @@ joining each with its prefix and observed suffix as a `Pairing`; file handling b
   accuracy minus spread, which cancels catastrophically under extreme draws.
 - Inter-event times have no metric of their own, since aligning draws by position to the observed
   suffix is not proper. The signature kernel score covers activities and times jointly.
-- The PIT noise is seeded from the prefix key alone, so a score never depends on the batch or the
+- The PIT noise is seeded from the cut alone, so a score never depends on the batch or the
   worker that computed it.
 - pySigLib solves the signature kernel on the current CUDA device, in float32. Pairs of paths
   with different lengths share a solver call by repeating each path's last point.

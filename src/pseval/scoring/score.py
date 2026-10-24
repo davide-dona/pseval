@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 from pseval.benchmark import Benchmark
 from pseval.data import Log
-from pseval.generation.store import Generations
+from pseval.generation.store import GenerationsReader
 from pseval.metrics.scorer import Scorer
 from pseval.record import Record, digest
 from pseval.scoring.store import ScoresWriter
@@ -24,7 +24,7 @@ MAX_DEFAULT_WORKERS = 8
 class _Worker:
     """What one pool process holds for the whole of its life."""
 
-    generations: Generations
+    generations: GenerationsReader
     num_samples: int
     test: Log
     scorer: Scorer
@@ -41,7 +41,10 @@ def _init_worker(
     # Set a limit on the GPU memory fraction per process, to avoid OOM errors
     torch.cuda.set_per_process_memory_fraction(1 / processes)
     _worker = _Worker(
-        generations=Generations(generations), num_samples=num_samples, test=test, scorer=scorer
+        generations=GenerationsReader(generations),
+        num_samples=num_samples,
+        test=test,
+        scorer=scorer,
     )
 
 
@@ -50,9 +53,9 @@ def _score_block(block: int) -> pd.DataFrame:
     test, forecasts = _worker.test, _worker.generations.block(block)
     keys = pd.DataFrame(
         {
-            'case_id': [case_id for (case_id, _), _ in forecasts],
-            'prefix_len': [prefix_len for (_, prefix_len), _ in forecasts],
-            'suffix_len': [len(test.suffix_trace(key)[0]) for key, _ in forecasts],
+            'case_id': [cut.case_id for cut, _ in forecasts],
+            'prefix_len': [cut.prefix_len for cut, _ in forecasts],
+            'suffix_len': [len(test.suffix_trace(cut)[0]) for cut, _ in forecasts],
         }
     )
     scores = _worker.scorer.score(test, forecasts, num_samples=_worker.num_samples)
@@ -88,13 +91,13 @@ def score(
             removed.
     """
     path = generations.with_name('scores.parquet') if path is None else path
-    with Generations(generations) as file:
+    with GenerationsReader(generations) as file:
         file.record.require_input('benchmark', benchmark.digest)
         label, blocks, prefixes = file.record.label, file.blocks, file.prefixes
-        keys = file.prefix_keys()
+        cuts = file.cuts()
         num_samples = file.num_samples()
     test = benchmark._test()
-    if len(set(keys)) != len(keys) or set(keys) != set(test.cuts()):
+    if len(set(cuts)) != len(cuts) or set(cuts) != set(test.cuts()):
         raise ValueError('The generations must answer every test prefix exactly once')
     record = Record(
         dataset=benchmark.dataset,

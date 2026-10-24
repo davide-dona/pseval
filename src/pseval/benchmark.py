@@ -25,6 +25,7 @@ FILES = {
     'scorer': 'scorer.json',
     'declare_hard': 'declare_hard.json',
     'declare_soft': 'declare_soft.json',
+    'spec': 'spec.json',
 }
 
 # The splits, each holding the benchmark's record in its Parquet metadata.

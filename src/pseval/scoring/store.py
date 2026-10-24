@@ -78,7 +78,7 @@ class ScoresWriter:
 
 @dataclass(frozen=True, eq=False)
 class Scores:
-    """A scores file: one row per test prefix, and its record."""
+    """The contents of a scores file: one row per test prefix, and its record."""
 
     frame: pd.DataFrame
     record: Record
@@ -88,15 +88,41 @@ class Scores:
         return summarize(self.frame, list(METRIC_KEYS))
 
 
-def read_scores(path: Path) -> Scores:
-    """Read a scores file.
+class ScoresReader:
+    """A scores file, open for reading.
 
-    Raises:
-        ValueError: If it is not a pseval scores file.
+    Used as a context manager.
     """
-    with pq.ParquetFile(path) as parquet:
-        if not parquet.schema_arrow.remove_metadata().equals(SCHEMA):
-            raise ValueError(f'{path} does not have the scores schema of this pseval version')
-        record = Record.from_schema(parquet.schema_arrow)
-        frame = parquet.read().to_pandas()
-    return Scores(frame=frame, record=record)
+
+    def __init__(self, path: Path) -> None:
+        """
+        Raises:
+            ValueError: If it is not a pseval scores file.
+        """
+        self._parquet = pq.ParquetFile(path)
+        try:
+            if not self._parquet.schema_arrow.remove_metadata().equals(SCHEMA):
+                raise ValueError(f'{path} does not have the scores schema of this pseval version')
+            self._record = Record.from_schema(self._parquet.schema_arrow)
+        except Exception:
+            self._parquet.close()
+            raise
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(
+        self,
+        exception_type: type[BaseException] | None,
+        exception: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self._parquet.close()
+
+    @property
+    def record(self) -> Record:
+        return self._record
+
+    def read(self) -> Scores:
+        """Read every row of the file."""
+        return Scores(frame=self._parquet.read().to_pandas(), record=self._record)

@@ -3,7 +3,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 from pseval.benchmark import Benchmark
-from pseval.generation.store import GenerationWriter
+from pseval.generation.store import GenerationsWriter
 from pseval.model import SuffixModel, batch_seed, forecast
 from pseval.record import Record
 
@@ -38,20 +38,20 @@ def generate(
     """
     # Retrieve the test set and sort by prefix length
     test = benchmark._test()
-    keys = sorted(test.cuts(), key=lambda key: key[1])
+    cuts = sorted(test.cuts(), key=lambda cut: cut.prefix_len)
     # Build the record of the generation file
     record = Record(dataset=benchmark.dataset, label=label, inputs={'benchmark': benchmark.digest})
     scorer = benchmark.scorer
 
     # Batched writing of the generations
-    with GenerationWriter(path, record) as writer:
-        starts = range(0, len(keys), batch_size)
+    with GenerationsWriter(path, record) as writer:
+        starts = range(0, len(cuts), batch_size)
         for batch, start in enumerate(tqdm(starts, desc='Generating', unit='batch')):
-            batch_keys = keys[start : start + batch_size]
+            batch_cuts = cuts[start : start + batch_size]
             forecasts = forecast(
-                model, test.prefixes(batch_keys), num_samples, seed=batch_seed(seed, batch)
+                model, test.prefixes(batch_cuts), num_samples, seed=batch_seed(seed, batch)
             )
-            for key, prefix_forecast in zip(batch_keys, forecasts, strict=True):
-                scorer.require_forecast(key, prefix_forecast, num_samples=num_samples)
-            writer.write(list(zip(batch_keys, forecasts, strict=True)))
+            for cut, prefix_forecast in zip(batch_cuts, forecasts, strict=True):
+                scorer.require_forecast(cut, prefix_forecast, num_samples=num_samples)
+            writer.write(list(zip(batch_cuts, forecasts, strict=True)))
     return path

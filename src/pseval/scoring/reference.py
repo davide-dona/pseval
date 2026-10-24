@@ -1,6 +1,6 @@
 import numpy as np
 
-from pseval.data import ACTIVITY_KEY, Forecast, Log, PrefixBatch
+from pseval.data import ACTIVITY_KEY, Draw, Forecast, Log, PrefixBatch
 from pseval.model import SuffixModel
 
 
@@ -31,12 +31,17 @@ class Unconditional(SuffixModel):
             len(self._starts), size=(len(prefixes), num_samples)
         )
         return [
-            Forecast.of(
-                activities=[
-                    self._activities[self._starts[cut] : self._stops[cut]].tolist() for cut in row
-                ],
-                minutes=[self._minutes[self._starts[cut] : self._stops[cut]] for cut in row],
-                truncated=[False] * num_samples,
+            Forecast(
+                draws=tuple(
+                    Draw(
+                        activities=self._activities[self._starts[cut] : self._stops[cut]],
+                        inter_event_time_minutes=self._minutes[
+                            self._starts[cut] : self._stops[cut]
+                        ],
+                        truncated=False,
+                    )
+                    for cut in row
+                )
             )
             for row in drawn
         ]

@@ -1,6 +1,6 @@
 from pseval.benchmark import Benchmark
 from pseval.metrics import PROPER_SCORES
-from pseval.scoring.store import Scores, read_scores
+from pseval.scoring.store import Scores, ScoresReader
 
 
 def skill(scores: Scores, benchmark: Benchmark) -> dict[str, float]:
@@ -20,7 +20,8 @@ def skill(scores: Scores, benchmark: Benchmark) -> dict[str, float]:
     Raises:
         ValueError: If the scores belong to another benchmark or cover other prefixes.
     """
-    reference = read_scores(benchmark._reference_scores())
+    with ScoresReader(benchmark._reference_scores()) as reader:
+        reference = reader.read()
     for scored in (scores, reference):
         scored.record.require_input('benchmark', benchmark.digest)
     keys = ['case_id', 'prefix_len']
