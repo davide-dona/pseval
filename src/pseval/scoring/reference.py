@@ -1,6 +1,6 @@
 import numpy as np
 
-from pseval.data import ACTIVITY_KEY, Log, PrefixBatch, SuffixDraws
+from pseval.data import ACTIVITY_KEY, Forecast, Log, PrefixBatch
 from pseval.model import SuffixModel
 
 
@@ -8,8 +8,8 @@ class Unconditional(SuffixModel):
     """The unconditional reference model, whose scores every benchmark stores for `skill`.
 
     It draws real train suffixes regardless of the prefix: each draw is the observed suffix,
-    activities and inter-event minutes, of a train cut drawn uniformly from all of them, so the
-    forecast is the marginal suffix distribution over train prefixes.
+    activities and inter-event minutes, of a train cut drawn uniformly from all of them.
+    The resulting forecast is the marginal suffix distribution over train prefixes.
     """
 
     def __init__(self, train: Log) -> None:
@@ -25,13 +25,13 @@ class Unconditional(SuffixModel):
         self._starts = np.flatnonzero(~first)
         self._stops = offsets[1:][case_of_event[~first]]
 
-    def sample(self, prefixes: PrefixBatch, num_samples: int, *, seed: int) -> list[SuffixDraws]:
+    def sample(self, prefixes: PrefixBatch, num_samples: int, *, seed: int) -> list[Forecast]:
         """Draw `num_samples` train suffixes per prefix, independently and with replacement."""
         drawn = np.random.default_rng(seed).integers(
             len(self._starts), size=(len(prefixes), num_samples)
         )
         return [
-            SuffixDraws(
+            Forecast.of(
                 activities=[
                     self._activities[self._starts[cut] : self._stops[cut]].tolist() for cut in row
                 ],

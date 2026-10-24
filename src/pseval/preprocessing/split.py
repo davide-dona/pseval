@@ -68,8 +68,8 @@ def out_of_time_split(
     # The test cases are those still running at the separation, including the crossing ones
     # that started before it.
     test_cases = stops_ts.index[stops_ts.values >= separation_ts]
-    # Avoid evaluatinf the prefixes of a trace that started before the separation, 
-    # since they would be predicted with training data from their future. 
+    # Avoid evaluating the prefixes of a trace that started before the separation,
+    # since they would be predicted with training data from their future.
     crossing = test_cases.difference(starts_ts.sort_values().index[first_test_case:])
     test = log[log[CASE_KEY].isin(test_cases)]
     first_cuts = _first_cuts(test, separation_ts=separation_ts, crossing=crossing)
@@ -94,7 +94,7 @@ def _first_cuts(
     reaches past the separation, and 1 on every other case."""
     rows = split[split[CASE_KEY].isin(crossing)]
     positions = rows.groupby(CASE_KEY).cumcount() + 1
-    
+
     # The first cut is the first event whose timestamp is after the separation, or 1 if none.
     selected = rows[TIMESTAMP_KEY].values > separation_ts
     bounds = positions[selected].groupby(rows[CASE_KEY][selected]).min()

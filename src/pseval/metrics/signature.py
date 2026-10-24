@@ -7,7 +7,7 @@ import pysiglib
 import torch
 from scipy.spatial.distance import pdist
 
-from pseval.generation.records import DecodedEvents
+from pseval.data import Suffix
 
 # Each cell of the PDE grid is split into 2**DYADIC_ORDER steps along both paths.
 DYADIC_ORDER = 1
@@ -84,15 +84,15 @@ class SignatureKernel:
             'alphabet': self.alphabet,
         }
 
-    def embed(self, events: DecodedEvents, *, axes: Mapping[str, int]) -> np.ndarray:
+    def embed(self, suffix: Suffix, *, axes: Mapping[str, int]) -> np.ndarray:
         """Embed one suffix as path points, each activity on its axis in `axes`.
 
         Returns:
             Points shaped `[2L + 1, 1 + alphabet]`, float64.
         """
         return embed(
-            np.fromiter(map(axes.__getitem__, events.activities), np.int64, len(events)),
-            events.inter_event_time_minutes,
+            np.fromiter(map(axes.__getitem__, suffix.activities), np.int64, len(suffix)),
+            suffix.inter_event_time_minutes,
             time_scale=self.time_scale,
             alphabet=self.alphabet,
         )

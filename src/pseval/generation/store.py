@@ -9,8 +9,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
-from pseval.data import PrefixKey
-from pseval.generation.records import Draws
+from pseval.data import Forecast, PrefixKey
 from pseval.record import Record
 
 # Activity names, one per event, dictionary encoded on disk.
@@ -48,22 +47,22 @@ _FLOAT_LEAVES = ['generated_draws.list.element.inter_event_time_minutes.list.ele
 _TRUNCATED_LEAF = 'generated_draws.list.element.truncated'
 
 
-def _row(key: PrefixKey, draws: Draws) -> dict:
+def _row(key: PrefixKey, forecast: Forecast) -> dict:
     return {
         'case_id': key[0],
         'prefix_len': key[1],
         'generated_draws': [
             {
-                'activities': list(events.activities),
-                'inter_event_time_minutes': events.inter_event_time_minutes.tolist(),
+                'activities': list(suffix.activities),
+                'inter_event_time_minutes': suffix.inter_event_time_minutes.tolist(),
                 'truncated': bool(truncated),
             }
-            for events, truncated in zip(draws, draws.truncated, strict=True)
+            for suffix, truncated in zip(forecast, forecast.truncated, strict=True)
         ],
     }
 
 
-def _draws_from_table(table: pa.Table) -> list[tuple[PrefixKey, Draws]]:
+def _forecasts_from_table(table: pa.Table) -> list[tuple[PrefixKey, Forecast]]:
     """Decode a block column by column, each prefix's arrays being views of the block's.
 
     Raises:
@@ -90,14 +89,14 @@ def _draws_from_table(table: pa.Table) -> list[tuple[PrefixKey, Draws]]:
     ):
         first, last = draw_offsets[row], draw_offsets[row + 1]
         row_time_offsets = time_offsets[first : last + 1]
-        draws = Draws(
+        forecast = Forecast(
             activities=tuple(activities[first:last]),
             inter_event_time_minutes=times[row_time_offsets[0] : row_time_offsets[-1]],
             truncated=truncated[first:last],
         )
-        if not np.array_equal(row_time_offsets - row_time_offsets[0], draws.offsets):
+        if not np.array_equal(row_time_offsets - row_time_offsets[0], forecast.offsets):
             raise ValueError(f'{key} has draw times that do not match their activities')
-        result.append((key, draws))
+        result.append((key, forecast))
     return result
 
 
@@ -141,9 +140,9 @@ class GenerationWriter:
         if exception_type is not None:
             self._path.unlink(missing_ok=True)
 
-    def write(self, draws: Sequence[tuple[PrefixKey, Draws]]) -> None:
-        """Write one batch of prefixes and their draws as one row group."""
-        rows = [_row(key, prefix_draws) for key, prefix_draws in draws]
+    def write(self, forecasts: Sequence[tuple[PrefixKey, Forecast]]) -> None:
+        """Write one batch of prefixes and their forecasts as one row group."""
+        rows = [_row(key, forecast) for key, forecast in forecasts]
         self._writer.write_table(table=pa.Table.from_pylist(mapping=rows, schema=SCHEMA))
 
 
@@ -216,6 +215,6 @@ class Generations:
             raise ValueError(f'The prefixes hold different draw counts: {sorted(counts)}')
         return counts[0]
 
-    def block(self, block: int) -> list[tuple[PrefixKey, Draws]]:
-        """Decode one row group: each prefix's key and draws, in file order."""
-        return _draws_from_table(self._parquet.read_row_group(block))
+    def block(self, block: int) -> list[tuple[PrefixKey, Forecast]]:
+        """Decode one row group: each prefix's key and forecast, in file order."""
+        return _forecasts_from_table(self._parquet.read_row_group(block))

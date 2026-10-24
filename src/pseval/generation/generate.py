@@ -4,7 +4,7 @@ from tqdm import tqdm
 
 from pseval.benchmark import Benchmark
 from pseval.generation.store import GenerationWriter
-from pseval.model import SuffixModel, batch_seed, draw
+from pseval.model import SuffixModel, batch_seed, forecast
 from pseval.record import Record
 
 
@@ -48,10 +48,10 @@ def generate(
         starts = range(0, len(keys), batch_size)
         for batch, start in enumerate(tqdm(starts, desc='Generating', unit='batch')):
             batch_keys = keys[start : start + batch_size]
-            draws = draw(
+            forecasts = forecast(
                 model, test.prefixes(batch_keys), num_samples, seed=batch_seed(seed, batch)
             )
-            for key, prefix_draws in zip(batch_keys, draws, strict=True):
-                scorer.require_draws(key, prefix_draws, num_samples=num_samples)
-            writer.write(list(zip(batch_keys, draws, strict=True)))
+            for key, prefix_forecast in zip(batch_keys, forecasts, strict=True):
+                scorer.require_forecast(key, prefix_forecast, num_samples=num_samples)
+            writer.write(list(zip(batch_keys, forecasts, strict=True)))
     return path

@@ -47,15 +47,15 @@ def _init_worker(
 
 def _score_block(block: int) -> pd.DataFrame:
     """Validate and score one row group, one scores row per prefix."""
-    test, draws = _worker.test, _worker.generations.block(block)
+    test, forecasts = _worker.test, _worker.generations.block(block)
     keys = pd.DataFrame(
         {
-            'case_id': [case_id for (case_id, _), _ in draws],
-            'prefix_len': [prefix_len for (_, prefix_len), _ in draws],
-            'suffix_len': [len(test.suffix_trace(key)[0]) for key, _ in draws],
+            'case_id': [case_id for (case_id, _), _ in forecasts],
+            'prefix_len': [prefix_len for (_, prefix_len), _ in forecasts],
+            'suffix_len': [len(test.suffix_trace(key)[0]) for key, _ in forecasts],
         }
     )
-    scores = _worker.scorer.score(test, draws, num_samples=_worker.num_samples)
+    scores = _worker.scorer.score(test, forecasts, num_samples=_worker.num_samples)
     return pd.concat([keys, scores], axis=1)
 
 
