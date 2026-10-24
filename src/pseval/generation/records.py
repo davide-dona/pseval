@@ -28,11 +28,7 @@ class DecodedEvents:
 
 @dataclass(frozen=True, eq=False)
 class Draws:
-    """One prefix's drawn suffixes.
-
-    Draw `i` has `activities[i]` as its activities and
-    `inter_event_time_minutes[offsets[i]:offsets[i + 1]]` as their times.
-    """
+    """One prefix's drawn suffixes."""
 
     # [K] The activity names of each draw.
     activities: tuple[tuple[str, ...], ...]
