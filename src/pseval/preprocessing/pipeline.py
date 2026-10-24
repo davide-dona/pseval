@@ -58,13 +58,13 @@ def split_log(
     max_length = int(np.ceil(np.percentile(case_lengths(log), spec.max_length_percentile)))
     # Drop the cases that are too long or too short
     log = drop_outlier_cases(log, max_duration_days=max_duration_days, max_length=max_length)
-    
+
     # Drop the cases starting too late to be seen finishing, so the test cases are not truncated
     min_observed_days = float(
         np.percentile(case_durations(log), spec.min_observed_duration_percentile)
     )
     log = drop_cases_starting_late(log, min_observed_days=min_observed_days)
-    
+
     # Split the log out of time
     train, validation, test, first_cuts = out_of_time_split(
         add_inter_event_minutes(sort_log(log)),
