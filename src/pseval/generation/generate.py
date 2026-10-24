@@ -3,7 +3,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 from pseval.benchmark import Benchmark
-from pseval.generation.store import GenerationWriter
+from pseval.generation.store import GenerationsWriter
 from pseval.model import SuffixModel, batch_seed, forecast
 from pseval.record import Record
 
@@ -44,7 +44,7 @@ def generate(
     scorer = benchmark.scorer
 
     # Batched writing of the generations
-    with GenerationWriter(path, record) as writer:
+    with GenerationsWriter(path, record) as writer:
         starts = range(0, len(keys), batch_size)
         for batch, start in enumerate(tqdm(starts, desc='Generating', unit='batch')):
             batch_keys = keys[start : start + batch_size]

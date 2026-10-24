@@ -148,7 +148,9 @@ class Scorer:
         outside = {name for names in forecast.activities for name in names}.difference(self.axes)
         if outside:
             raise ValueError(f'{key} has draws outside the vocabulary: {sorted(outside)!r}')
-        minutes = forecast.inter_event_time_minutes
+        minutes = np.concatenate(
+            [np.zeros(0), *(draw.inter_event_time_minutes for draw in forecast)]
+        )
         if not np.isfinite(minutes).all() or (minutes < 0).any():
             raise ValueError(f'{key} has a negative or non-finite draw time')
 

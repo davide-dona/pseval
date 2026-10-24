@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 from pseval.benchmark import Benchmark
 from pseval.data import Log
-from pseval.generation.store import Generations
+from pseval.generation.store import GenerationsReader
 from pseval.metrics.scorer import Scorer
 from pseval.record import Record, digest
 from pseval.scoring.store import ScoresWriter
@@ -24,7 +24,7 @@ MAX_DEFAULT_WORKERS = 8
 class _Worker:
     """What one pool process holds for the whole of its life."""
 
-    generations: Generations
+    generations: GenerationsReader
     num_samples: int
     test: Log
     scorer: Scorer
@@ -41,7 +41,10 @@ def _init_worker(
     # Set a limit on the GPU memory fraction per process, to avoid OOM errors
     torch.cuda.set_per_process_memory_fraction(1 / processes)
     _worker = _Worker(
-        generations=Generations(generations), num_samples=num_samples, test=test, scorer=scorer
+        generations=GenerationsReader(generations),
+        num_samples=num_samples,
+        test=test,
+        scorer=scorer,
     )
 
 
@@ -88,7 +91,7 @@ def score(
             removed.
     """
     path = generations.with_name('scores.parquet') if path is None else path
-    with Generations(generations) as file:
+    with GenerationsReader(generations) as file:
         file.record.require_input('benchmark', benchmark.digest)
         label, blocks, prefixes = file.record.label, file.blocks, file.prefixes
         keys = file.prefix_keys()

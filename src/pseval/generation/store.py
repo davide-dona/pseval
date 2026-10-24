@@ -9,7 +9,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
-from pseval.data import Forecast, PrefixKey
+from pseval.data import Draw, Forecast, PrefixKey
 from pseval.record import Record
 
 # The generations file: one row per test prefix, the draws nested inside it.
@@ -19,8 +19,11 @@ SCHEMA = pa.schema(
         ('case_id', pa.large_string()),
         ('prefix_len', pa.int64()),
         (
-            'generated_draws',
+            # List of draws
+            'forecast',
             pa.list_(
+                # Each draw is a struct of the suffix's activities, inter-event minutes, and
+                # truncation flag.
                 pa.field(
                     name='element',
                     type=pa.struct(
@@ -30,8 +33,7 @@ SCHEMA = pa.schema(
                                 'activities',
                                 pa.list_(pa.field(name='element', type=pa.string())),
                             ),
-                            # Inter-event minutes, one per activity. Stored in float32, the width
-                            # models emit.
+                            # Inter-event minutes, one per activity.
                             (
                                 'inter_event_time_minutes',
                                 pa.list_(pa.field(name='element', type=pa.float32())),
@@ -45,72 +47,56 @@ SCHEMA = pa.schema(
     ]
 )
 
-# Parquet paths of `SCHEMA` columns, which must follow its field names.
-# The key columns, read alone to list the prefixes without decoding their draws.
-_KEY_COLUMNS = ['case_id', 'prefix_len']
-# The activity name leaf, dictionary encoded when written.
-_NAME_LEAVES = ['generated_draws.list.element.activities.list.element']
-# The minutes leaf, written with byte stream split, which compresses floats better.
-_FLOAT_LEAVES = ['generated_draws.list.element.inter_event_time_minutes.list.element']
-# The truncation flag leaf, read alone to count each prefix's draws.
-_TRUNCATED_LEAF = 'generated_draws.list.element.truncated'
-
 
 def _row(key: PrefixKey, forecast: Forecast) -> dict:
-    """One prefix's key and forecast as a `SCHEMA` row, one struct per draw."""
+    """Convert one prefix's forecast to a generations file row."""
     return {
         'case_id': key[0],
         'prefix_len': key[1],
-        'generated_draws': [
+        'forecast': [
             {
-                'activities': list(suffix.activities),
-                'inter_event_time_minutes': suffix.inter_event_time_minutes.tolist(),
-                'truncated': bool(truncated),
+                'activities': list(draw.activities),
+                'inter_event_time_minutes': draw.inter_event_time_minutes.tolist(),
+                'truncated': draw.truncated,
             }
-            for suffix, truncated in zip(forecast, forecast.truncated, strict=True)
+            for draw in forecast
         ],
     }
 
 
 def _forecasts_from_table(table: pa.Table) -> list[tuple[PrefixKey, Forecast]]:
-    """Decode a block column by column, each prefix's arrays being views of the block's.
+    """Decode a block column by column, each draw's times being a view of the block's.
 
     Raises:
         ValueError: If a draw's times do not match its activities.
     """
-    draws = table.column('generated_draws').combine_chunks()
-    draw_offsets = draws.offsets.to_numpy()
-    names = pc.struct_field(draws.values, 'activities')
+    structs = table.column('forecast').combine_chunks()
+    names = pc.struct_field(structs.values, 'activities')
     # Decoded through the dictionary, so each distinct name is one shared string object.
     encoded = pc.dictionary_encode(names.values)
     events = np.array(encoded.dictionary.to_pylist(), dtype=object)[encoded.indices.to_numpy()]
-    activities = [tuple(events[a:b]) for a, b in pairwise(names.offsets.to_numpy())]
-    truncated = pc.struct_field(draws.values, 'truncated').to_numpy(zero_copy_only=False)
-    lists = pc.struct_field(draws.values, 'inter_event_time_minutes')
-    times, time_offsets = lists.values.to_numpy().astype(np.float64), lists.offsets.to_numpy()
-
-    result = []
-    for row, key in enumerate(
-        zip(
-            table.column('case_id').to_pylist(),
-            table.column('prefix_len').to_pylist(),
+    lists = pc.struct_field(structs.values, 'inter_event_time_minutes')
+    times = lists.values.to_numpy().astype(np.float64)
+    truncated = pc.struct_field(structs.values, 'truncated').to_pylist()
+    draws = [
+        Draw(activities=events[a:b], inter_event_time_minutes=times[c:d], truncated=flag)
+        for (a, b), (c, d), flag in zip(
+            pairwise(names.offsets.to_numpy()),
+            pairwise(lists.offsets.to_numpy()),
+            truncated,
             strict=True,
         )
-    ):
-        first, last = draw_offsets[row], draw_offsets[row + 1]
-        row_time_offsets = time_offsets[first : last + 1]
-        forecast = Forecast(
-            activities=tuple(activities[first:last]),
-            inter_event_time_minutes=times[row_time_offsets[0] : row_time_offsets[-1]],
-            truncated=truncated[first:last],
-        )
-        if not np.array_equal(row_time_offsets - row_time_offsets[0], forecast.offsets):
-            raise ValueError(f'{key} has draw times that do not match their activities')
-        result.append((key, forecast))
-    return result
+    ]
+    keys = zip(
+        table.column('case_id').to_pylist(), table.column('prefix_len').to_pylist(), strict=True
+    )
+    return [
+        (key, Forecast(draws=tuple(draws[first:last])))
+        for key, (first, last) in zip(keys, pairwise(structs.offsets.to_numpy()), strict=True)
+    ]
 
 
-class GenerationWriter:
+class GenerationsWriter:
     """A generations file, open for writing, one row group per batch.
 
     Used as a context manager: the footer is written when it closes, and a failure inside the
@@ -129,8 +115,10 @@ class GenerationWriter:
             schema=record.attach_to(SCHEMA),
             compression='zstd',
             compression_level=9,
-            use_dictionary=_NAME_LEAVES,
-            use_byte_stream_split=_FLOAT_LEAVES,
+            # Nested Parquet columns are named by their path in `SCHEMA`, `list.element` per list.
+            use_dictionary=['forecast.list.element.activities.list.element'],
+            # Byte stream split compresses floats better than the plain encoding.
+            use_byte_stream_split=['forecast.list.element.inter_event_time_minutes.list.element'],
         )
 
     def __enter__(self) -> Self:
@@ -156,7 +144,7 @@ class GenerationWriter:
         self._writer.write_table(table=pa.Table.from_pylist(mapping=rows, schema=SCHEMA))
 
 
-class Generations:
+class GenerationsReader:
     """A generations file, open for reading.
 
     Used as a context manager, and opened once per process that reads it: each scoring worker
@@ -204,7 +192,7 @@ class Generations:
 
     def prefix_keys(self) -> list[PrefixKey]:
         """The key of every row, in file order, read from the two key columns only."""
-        table = self._parquet.read(columns=_KEY_COLUMNS)
+        table = self._parquet.read(columns=['case_id', 'prefix_len'])
         return list(
             zip(
                 table.column('case_id').to_pylist(),
@@ -219,8 +207,8 @@ class Generations:
         Raises:
             ValueError: If the prefixes hold different draw counts.
         """
-        table = self._parquet.read(columns=[_TRUNCATED_LEAF])
-        counts = pc.unique(pc.list_value_length(table.column('generated_draws'))).to_pylist()
+        table = self._parquet.read(columns=['forecast.list.element.truncated'])
+        counts = pc.unique(pc.list_value_length(table.column('forecast'))).to_pylist()
         if len(counts) != 1:
             raise ValueError(f'The prefixes hold different draw counts: {sorted(counts)}')
         return counts[0]

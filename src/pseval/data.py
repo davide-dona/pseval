@@ -164,80 +164,63 @@ class Suffix:
 
 
 @dataclass(frozen=True, eq=False)
-class Forecast:
-    """A model's drawn suffixes for one prefix, in log units, the draws' times packed in one array.
+class Draw(Suffix):
+    """A suffix a model drew for a prefix.
 
-    Models build it with `of`. Draw `i` holds the names `activities[i]`, its times
-    `inter_event_time_minutes[offsets[i]:offsets[i + 1]]`, and `truncated[i]`.
+    The activities and times may be any sequences; they are stored as a tuple and a float64 array.
     """
 
-    # [K] The activity names of each draw.
-    activities: tuple[tuple[str, ...], ...]
-    # [E] float64 inter-event minutes of every draw, draw after draw.
-    inter_event_time_minutes: np.ndarray
-    # [K] Whether each draw was closed at the length cap without ending.
-    truncated: np.ndarray
+    # Whether the model closed the draw at the length cap without ending it.
+    truncated: bool
 
     def __post_init__(self) -> None:
-        if len(self.truncated) != len(self.activities):
-            raise ValueError('A forecast needs one truncation flag per draw')
-        if len(self.inter_event_time_minutes) != self.offsets[-1]:
-            raise ValueError('A forecast needs one inter-event time per drawn activity')
-
-    @classmethod
-    def of(
-        cls,
-        activities: Sequence[Sequence[str]],
-        minutes: Sequence[np.ndarray],
-        truncated: Sequence[bool],
-    ) -> 'Forecast':
-        """Pack one prefix's draws.
-
-        Args:
-            activities: `[K]` the activity names of each draw.
-            minutes: `[K]` the inter-event minutes `[L]` before each activity of each draw.
-            truncated: `[K]` whether each draw was closed at the length cap without ending.
-
-        Raises:
-            ValueError: If the draws disagree on their count, or a draw's times on its length.
-        """
-        if len(minutes) != len(activities):
-            raise ValueError('A forecast needs inter-event times for every draw')
-        for names, times in zip(activities, minutes, strict=True):
-            if np.shape(times) != (len(names),):
-                raise ValueError('A draw needs one inter-event time per activity')
-        return cls(
-            activities=tuple(tuple(names) for names in activities),
-            inter_event_time_minutes=np.concatenate(
-                [np.zeros(0), *(np.asarray(times, dtype=np.float64) for times in minutes)]
-            ),
-            truncated=np.asarray(truncated, dtype=bool),
+        if np.shape(self.inter_event_time_minutes) != (len(self.activities),):
+            raise ValueError('A draw needs one inter-event time per activity')
+        object.__setattr__(self, 'activities', tuple(self.activities))
+        object.__setattr__(
+            self,
+            'inter_event_time_minutes',
+            np.asarray(self.inter_event_time_minutes, dtype=np.float64),
         )
+        object.__setattr__(self, 'truncated', bool(self.truncated))
+
+
+@dataclass(frozen=True, eq=False)
+class Forecast:
+    """A model's draws for one prefix."""
+
+    draws: tuple[Draw, ...]
+
+    def __post_init__(self) -> None:
+        if not all(isinstance(draw, Draw) for draw in self.draws):
+            raise ValueError('A forecast holds only Draw values')
+        object.__setattr__(self, 'draws', tuple(self.draws))
 
     def __len__(self) -> int:
         """How many draws were taken."""
-        return len(self.activities)
+        return len(self.draws)
 
-    def __iter__(self) -> Iterator[Suffix]:
-        """Each draw's activities and times."""
-        times, offsets = self.inter_event_time_minutes, self.offsets
-        for draw, activities in enumerate(self.activities):
-            yield Suffix(activities, times[offsets[draw] : offsets[draw + 1]])
+    def __iter__(self) -> Iterator[Draw]:
+        return iter(self.draws)
+
+    @cached_property
+    def activities(self) -> tuple[tuple[str, ...], ...]:
+        """[K] The activity names of each draw."""
+        return tuple(draw.activities for draw in self.draws)
 
     @cached_property
     def lengths(self) -> np.ndarray:
         """[K] How many events each draw holds."""
-        return np.fromiter(map(len, self.activities), np.int64, len(self))
+        return np.fromiter(map(len, self.draws), np.int64, len(self))
 
     @cached_property
-    def offsets(self) -> np.ndarray:
-        """[K + 1] Where each draw's times start in `inter_event_time_minutes`, then their end."""
-        return np.concatenate([np.zeros(1, np.int64), np.cumsum(self.lengths)])
+    def truncated(self) -> np.ndarray:
+        """[K] Whether each draw was closed at the length cap without ending."""
+        return np.fromiter((draw.truncated for draw in self.draws), bool, len(self))
 
     @property
     def remaining_time_minutes(self) -> np.ndarray:
-        """[K] Each draw's inter-event minutes summed in event order."""
-        draw_of_event = np.repeat(np.arange(len(self)), self.lengths)  # [E]
-        return np.bincount(
-            draw_of_event, weights=self.inter_event_time_minutes, minlength=len(self)
+        """[K] Each draw's inter-event minutes summed."""
+        return np.fromiter(
+            (draw.remaining_time_minutes for draw in self.draws), np.float64, len(self)
         )

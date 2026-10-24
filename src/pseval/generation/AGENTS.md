@@ -8,7 +8,7 @@ the only artifact a model contributes to its scores.
 | Module | Owns |
 | --- | --- |
 | `generate.py` | `generate`: test cuts, batching, batch seeds, and the write loop. |
-| `store.py` | The generations Parquet schema, `GenerationWriter`, and the `Generations` reader. |
+| `store.py` | The generations Parquet schema, `GenerationsWriter`, and `GenerationsReader`. |
 
 ## Contracts
 
@@ -24,5 +24,5 @@ the only artifact a model contributes to its scores.
   the dataset, the model label, and the benchmark digest. The draw count is not stored: it is
   read from the draws. Prefixes and observed suffixes are not stored; scoring reads them from
   the benchmark.
-- `GenerationWriter` writes one row group per batch, and scoring parallelizes over row groups. A
+- `GenerationsWriter` writes one row group per batch, and scoring parallelizes over row groups. A
   failure inside the writer removes the file.
