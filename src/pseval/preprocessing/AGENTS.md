@@ -7,19 +7,24 @@ part of the model author's workflow, and the only code that writes benchmark fil
 
 | Module | Owns |
 | --- | --- |
-| `specs.py` | `DatasetSpec` and the shipped `SPECS`: original log columns and every protocol constant. |
+| `specs.py` | `DatasetSpec`, its JSON form: original log columns and every protocol constant. |
 | `filters.py` | Case duration and length measures and the case filters. |
 | `split.py` | Log sorting, inter-event minutes, and the out-of-time split with its first cuts. |
 | `pipeline.py` | Reading an original log by its spec and the full filter, sort, and split order. |
-| `build.py` | `build`, the only way to make a benchmark, and the reproducibility check `rebuild`. |
+| `build.py` | `build`, the only way to make a benchmark. |
 
 The benchmark directory format, `FILES`, its digest, and loading live in
 `pseval/benchmark.py`, which knows nothing of the specs.
 
+A spec lives only in its benchmark, as `spec.json` with every field written, so the Hub is its
+one source. To change the protocol, edit the spec of the current release's benchmark and build
+from it.
+
 ## Benchmark Directory
 
 - A benchmark is one directory per dataset, named after it: the `FILES` (three Parquet splits,
-  `scorer.json`, `declare_hard.json`, and `declare_soft.json`) and `reference_scores.parquet`.
+  `scorer.json`, `declare_hard.json`, `declare_soft.json`, and `spec.json`) and
+  `reference_scores.parquet`.
 - Every split stores the benchmark's `Record` in its metadata: the dataset and the original
   log's digest. The splits must hold the same record, and `load_benchmark` requires its dataset
   to be the directory's name.
@@ -54,9 +59,9 @@ The benchmark directory format, `FILES`, its digest, and loading live in
   face far shorter remaining times than test's.
 - Everything fitted, the vocabulary, both Declare models, and the signature kernel calibration,
   is fitted on train alone through `Scorer.fit`.
-- A build must be deterministic: stable sorts, seeds from the spec, and canonical outputs.
-  `rebuild` checks that rebuilding from the original log reproduces every file of `FILES`, so
-  any nondeterminism surfaces there. The Parquet bytes depend on the locked pandas and pyarrow
-  versions, so run it in the locked environment.
+- A build must be deterministic: stable sorts, seeds from the spec, and canonical outputs. To
+  check a benchmark, build from its `spec.json` and original log into a scratch root and compare
+  the two digests. The Parquet bytes depend on the locked pandas and pyarrow versions, so build
+  in the locked environment.
 - The reference model `Unconditional` lives in `pseval.scoring.reference` and is generated and
   scored through `generate` and `score`, exactly like any other model.

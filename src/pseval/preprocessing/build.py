@@ -6,7 +6,7 @@ from pseval.data import Log
 from pseval.generation.generate import generate
 from pseval.metrics.scorer import Scorer
 from pseval.preprocessing.pipeline import split_log
-from pseval.preprocessing.specs import SPECS, DatasetSpec
+from pseval.preprocessing.specs import DatasetSpec
 from pseval.record import Record, digest
 from pseval.scoring.reference import Unconditional
 from pseval.scoring.score import score
@@ -28,9 +28,13 @@ def build(
         FileExistsError: If `root/<dataset>/` exists.
         ValueError: If the original log is not the one `spec` names.
     """
+    # Create the directory and write the splits, scorer, and spec.
     directory = root / spec.name
     _write_files(spec, original, directory)
     benchmark = Benchmark(directory)
+
+    # Build the unconditional reference scores, used for the `skill` metric.
+    # Once scored, the generation file is deleted.
     with tempfile.TemporaryDirectory() as temporary:
         generations = generate(
             Unconditional(benchmark.train),
@@ -42,33 +46,17 @@ def build(
     return benchmark
 
 
-def rebuild(benchmark: Benchmark, original: Path) -> None:
-    """Rebuild a benchmark's `FILES` from the original log and require the same digest.
-
-    Raises:
-        ValueError: If the rebuilt digest differs, naming the files that differ.
-    """
-    with tempfile.TemporaryDirectory() as temporary:
-        directory = Path(temporary) / benchmark.dataset
-        _write_files(SPECS[benchmark.dataset], original, directory)
-        differing = [
-            name
-            for name, file in FILES.items()
-            if digest(directory / file) != digest(benchmark.directory / file)
-        ]
-    if differing:
-        raise ValueError(
-            f'Rebuilding {benchmark.dataset} gives another digest; differing: '
-            f'{", ".join(differing)}'
-        )
-
-
 def _write_files(spec: DatasetSpec, original: Path, directory: Path) -> None:
-    """Write the splits and the scorer fitted on train, every file of `FILES`."""
+    """Write the splits, the scorer fitted on train, and the spec, every file of `FILES`."""
+    # Check the originality of the log
     if digest(original) != spec.original_sha256:
         raise ValueError(f'{original} is not the original {spec.name} log')
+
+    # Build the record of the log
     directory.mkdir(parents=True)
     record = Record(dataset=spec.name, label=None, inputs={'original': spec.original_sha256})
+
+    # Split the log and write the splits
     train, validation, test, first_cuts, max_length = split_log(spec, original)
     write_split(train, directory / FILES['train'], record)
     write_split(validation, directory / FILES['validation'], record)
@@ -85,3 +73,4 @@ def _write_files(spec: DatasetSpec, original: Path, directory: Path) -> None:
         hard=directory / FILES['declare_hard'],
         soft=directory / FILES['declare_soft'],
     )
+    spec.save(directory / FILES['spec'])

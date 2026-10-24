@@ -1,3 +1,3 @@
-from pseval.preprocessing.build import build, rebuild
+from pseval.preprocessing.build import build
 
-__all__ = ['build', 'rebuild']
+__all__ = ['build']
