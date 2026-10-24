@@ -76,8 +76,12 @@ def _write_files(spec: DatasetSpec, original: Path, directory: Path) -> None:
     scorer = Scorer.fit(
         Log(train),
         max_suffix_length=max_length,
-        declare_min_support=spec.declare_min_support,
-        declare_min_confidence=spec.declare_min_confidence,
+        declare_hard_min_support=spec.declare_hard_min_support,
+        declare_hard_min_confidence=spec.declare_hard_min_confidence,
         declare_max_cardinality=spec.declare_max_cardinality,
     )
-    scorer.save(path=directory / FILES['scorer'], declare=directory / FILES['declare'])
+    scorer.save(
+        path=directory / FILES['scorer'],
+        hard=directory / FILES['declare_hard'],
+        soft=directory / FILES['declare_soft'],
+    )

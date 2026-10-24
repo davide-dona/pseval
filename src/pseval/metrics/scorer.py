@@ -24,14 +24,16 @@ UNK = 'UNK'
 class Scorer:
     """The scorer fitted on a benchmark's train split, and the scoring it drives.
 
-    `vocabulary` names every activity a draw may hold, `max_suffix_length` caps every draw,
-    `declare` is the Declare model mined on train, on activity names, and `kernel` the signature
-    kernel calibrated on train.
+    `vocabulary` names every activity a draw may hold, `max_suffix_length` caps every draw, and
+    `kernel` is the signature kernel calibrated on train. Both Declare models are mined on train,
+    on activity names: `hard` holds the rules full conformance checks, and `soft` every rule
+    witnessed in some train trace, whose non-vacuous satisfaction the support score forecasts.
     """
 
     vocabulary: tuple[str, ...]
     max_suffix_length: int
-    declare: DeclareModel
+    hard: DeclareModel
+    soft: DeclareModel
     kernel: SignatureKernel
 
     @classmethod
@@ -40,18 +42,19 @@ class Scorer:
         train: Log,
         *,
         max_suffix_length: int,
-        declare_min_support: float,
-        declare_min_confidence: float,
+        declare_hard_min_support: float,
+        declare_hard_min_confidence: float,
         declare_max_cardinality: int,
     ) -> Self:
-        """Fit the vocabulary, mine the Declare model, and calibrate the signature kernel.
+        """Fit the vocabulary, mine both Declare models, and calibrate the signature kernel.
 
         Args:
             train: The train split.
             max_suffix_length: The length cap of every draw.
-            declare_min_support: Least non-vacuous support a mined constraint reaches.
-            declare_min_confidence: Least confidence a mined constraint reaches.
-            declare_max_cardinality: Largest occurrence count of the cardinality templates.
+            declare_hard_min_support: Least non-vacuous support a hard constraint reaches.
+            declare_hard_min_confidence: Least confidence a hard constraint reaches.
+            declare_max_cardinality: Largest occurrence count of the cardinality templates of
+                both models.
 
         Raises:
             ValueError: If the train split holds an activity named `UNK`.
@@ -61,26 +64,36 @@ class Scorer:
         if (activities == UNK).any():
             raise ValueError(f'The train split holds an activity named {UNK}')
         vocabulary = (*sorted(activities.unique().tolist()), UNK)
+        traces = activities.groupby(events[CASE_KEY], sort=False).agg(list).tolist()
         return cls(
             vocabulary=vocabulary,
             max_suffix_length=max_suffix_length,
-            declare=mine(
-                activities.groupby(events[CASE_KEY], sort=False).agg(list),
-                min_support=declare_min_support,
-                min_confidence=declare_min_confidence,
+            hard=mine(
+                traces,
+                min_support=declare_hard_min_support,
+                min_confidence=declare_hard_min_confidence,
+                max_cardinality=declare_max_cardinality,
+            ),
+            # A support of one trace in the split keeps exactly the rules some trace witnesses.
+            soft=mine(
+                traces,
+                min_support=1.0 / len(traces),
+                min_confidence=0.0,
                 max_cardinality=declare_max_cardinality,
             ),
             kernel=_fit_kernel(train, alphabet=len(vocabulary)),
         )
 
-    def save(self, *, path: Path, declare: Path) -> None:
+    def save(self, *, path: Path, hard: Path, soft: Path) -> None:
         """Write the fitted scorer as a benchmark stores it.
 
         Args:
             path: Destination of the vocabulary, length cap, and kernel calibration.
-            declare: Destination of the Declare model, on activity names.
+            hard: Destination of the hard Declare model, on activity names.
+            soft: Destination of the soft Declare model, on activity names.
         """
-        self.declare.save(declare)
+        self.hard.save(hard)
+        self.soft.save(soft)
         payload = {
             'vocabulary': list(self.vocabulary),
             'max_suffix_length': self.max_suffix_length,
@@ -89,13 +102,14 @@ class Scorer:
         path.write_text(json.dumps(payload, indent=4) + '\n')
 
     @classmethod
-    def load(cls, *, path: Path, declare: Path) -> Self:
+    def load(cls, *, path: Path, hard: Path, soft: Path) -> Self:
         """Read a fitted scorer written by `save`."""
         payload = json.loads(path.read_bytes())
         return cls(
             vocabulary=tuple(payload['vocabulary']),
             max_suffix_length=int(payload['max_suffix_length']),
-            declare=DeclareModel.load(declare),
+            hard=DeclareModel.load(hard),
+            soft=DeclareModel.load(soft),
             kernel=SignatureKernel.from_dict(payload['signature_kernel']),
         )
 
@@ -105,9 +119,14 @@ class Scorer:
         return {name: index for index, name in enumerate(self.vocabulary)}
 
     @cached_property
-    def checker(self) -> Checker:
-        """A Declare checker of activity name traces."""
-        return Checker(self.declare)
+    def hard_checker(self) -> Checker:
+        """A checker of activity name traces against the hard Declare model."""
+        return Checker(self.hard)
+
+    @cached_property
+    def soft_checker(self) -> Checker:
+        """A checker of activity name traces against the soft Declare model."""
+        return Checker(self.soft)
 
     def require_draws(self, key: PrefixKey, draws: Draws, *, num_samples: int) -> None:
         """Require one prefix's draws to honor the protocol contract.
@@ -156,7 +175,8 @@ class Scorer:
             self.require_draws(key, prefix_draws, num_samples=num_samples)
         batch = MetricInputs.of_batch(
             [self._forecast(log, key, prefix_draws) for key, prefix_draws in draws],
-            checker=self.checker,
+            hard_checker=self.hard_checker,
+            soft_checker=self.soft_checker,
             kernel=self.kernel,
             axes=self.axes,
         )

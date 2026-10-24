@@ -6,6 +6,7 @@ from pseval.metrics.definitions.conformance import conformance
 from pseval.metrics.definitions.joint import joint
 from pseval.metrics.definitions.remaining_time import remaining_time
 from pseval.metrics.definitions.suffix_length import suffix_length
+from pseval.metrics.definitions.support import support
 from pseval.metrics.inputs import MetricInputs
 
 
@@ -45,6 +46,10 @@ class PrefixScores:
 
     full_conformance_sample_rate: float
     full_conformance_observed: float
+    # Mean fair Brier score of the completed trace witnessing each soft Declare rule.
+    declare_support_brier: float
+    # Mean fair Brier score of the completed trace holding each vocabulary activity.
+    declare_activation_brier: float
 
     @classmethod
     def of(cls, inputs: MetricInputs) -> Self:
@@ -55,6 +60,7 @@ class PrefixScores:
             **suffix_length(inputs),
             **remaining_time(inputs),
             **conformance(inputs),
+            **support(inputs),
         )
 
 
@@ -68,4 +74,6 @@ PROPER_SCORES = (
     'energy_score_bigram',
     'suffix_length_crps',
     'remaining_time_crps_days',
+    'declare_support_brier',
+    'declare_activation_brier',
 )

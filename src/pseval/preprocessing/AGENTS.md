@@ -19,7 +19,7 @@ The benchmark directory format, `FILES`, its digest, and loading live in
 ## Benchmark Directory
 
 - A benchmark is one directory per dataset, named after it: the `FILES` (three Parquet splits,
-  `scorer.json`, and `declare.json`) and `reference_scores.parquet`.
+  `scorer.json`, `declare_hard.json`, and `declare_soft.json`) and `reference_scores.parquet`.
 - Every split stores the benchmark's `Record` in its metadata: the dataset and the original
   log's digest. The splits must hold the same record, and `load_benchmark` requires its dataset
   to be the directory's name.
@@ -52,7 +52,7 @@ The benchmark directory format, `FILES`, its digest, and loading live in
 - Validation is a seeded random sample of whole train cases, not a time slice: a slice ending at
   the separation would lose every long case starting inside it to test, so its prefixes would
   face far shorter remaining times than test's.
-- Everything fitted, the vocabulary, the Declare model, and the signature kernel calibration,
+- Everything fitted, the vocabulary, both Declare models, and the signature kernel calibration,
   is fitted on train alone through `Scorer.fit`.
 - A build must be deterministic: stable sorts, seeds from the spec, and canonical outputs.
   `rebuild` checks that rebuilding from the original log reproduces every file of `FILES`, so
