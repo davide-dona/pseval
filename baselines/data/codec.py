@@ -198,7 +198,7 @@ class Codec:
     resource: CategoricalColumn
     # The time channel every event carries as model input. Always log-scaled.
     input_inter_event_time: NumericColumn
-    # The time models predict and draws are decoded through.
+    # The time models predict and draws are decoded through. Never log-scaled.
     inter_event_time: NumericColumn
     # The configured event features, sorted by dtype into the two kinds.
     categorical_features: tuple[CategoricalColumn, ...]
@@ -212,8 +212,8 @@ class Codec:
 
         Args:
             benchmark: The benchmark.
-            data_config: The `data` section: the feature columns, which of them are log-scaled,
-                and whether the target inter-event time is.
+            data_config: The `data` section: the feature columns and which of them are
+                log-scaled.
         """
         train = benchmark.train
         events = derive_features(train.events, train.case_offsets)
@@ -239,11 +239,7 @@ class Codec:
             input_inter_event_time=NumericColumn.fit(
                 events, column=INTER_EVENT_MINUTES_KEY, log=True
             ),
-            inter_event_time=NumericColumn.fit(
-                events,
-                column=INTER_EVENT_MINUTES_KEY,
-                log=data_config.log_scaled_target_inter_event_time,
-            ),
+            inter_event_time=NumericColumn.fit(events, column=INTER_EVENT_MINUTES_KEY, log=False),
             categorical_features=tuple(categorical),
             numeric_features=tuple(numeric),
             max_trace_length=benchmark.max_suffix_length,

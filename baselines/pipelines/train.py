@@ -4,17 +4,17 @@ import wandb
 from omegaconf import DictConfig, OmegaConf
 
 import pseval
-from baselines.adapter import TorchSuffixModel
-from baselines.checkpoint import save_checkpoint
 from baselines.data.codec import Codec
 from baselines.data.dataset import TraceDataset, batches, fixed_subset
-from baselines.models.u_ed import UncertaintyAwareEncoderDecoder
+from baselines.models.autoregressive import build_model
 from baselines.pipelines.helpers import output_path
+from baselines.runtime.adapter import TorchSuffixModel
+from baselines.runtime.checkpoint import save_checkpoint
 from baselines.training.train import SELECTION_METRIC, TrainingResult, train
 
 
 def run(config: DictConfig) -> TrainingResult:
-    """Train a U-ED model on a benchmark and keep the checkpoint its validation score selects."""
+    """Train a baseline on a benchmark and keep the checkpoint its validation score selects."""
     benchmark = pseval.load_benchmark(config.data.name, root=config.benchmark_root)
     # Seeded before anything is built, so initialization, shuffling, and subsets reproduce.
     torch.manual_seed(config.seed)
@@ -22,7 +22,7 @@ def run(config: DictConfig) -> TrainingResult:
     device = torch.device(config.device)
 
     codec = Codec.fit(benchmark, config.data)
-    model = UncertaintyAwareEncoderDecoder(config.model, codec).to(device)
+    model = build_model(config.model, codec).to(device)
     parameters = sum(parameter.numel() for parameter in model.parameters())
     print(f'{config.model.label} on {config.data.name}: {parameters:,} parameters', flush=True)
 

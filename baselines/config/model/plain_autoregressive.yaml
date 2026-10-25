@@ -1,7 +1,0 @@
-defaults:
-- u_ed_transformer
-- _self_
-label: plain_autoregressive
-# Activities from the softmax and times from the Gaussian head of one deterministic network.
-logit_samples: null
-generation_dropout: false

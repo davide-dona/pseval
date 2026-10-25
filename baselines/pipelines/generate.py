@@ -5,9 +5,9 @@ import torch
 from omegaconf import DictConfig
 
 import pseval
-from baselines.adapter import TorchSuffixModel
-from baselines.checkpoint import load_checkpoint, restore_model
 from baselines.pipelines.helpers import output_path
+from baselines.runtime.adapter import TorchSuffixModel
+from baselines.runtime.checkpoint import load_checkpoint, restore_model
 
 
 def run(config: DictConfig) -> Path:

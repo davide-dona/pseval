@@ -9,8 +9,8 @@ from omegaconf import DictConfig
 from torch import optim
 from torch.utils.data import DataLoader
 
-from baselines.adapter import seeded
-from baselines.models.u_ed import UncertaintyAwareEncoderDecoder
+from baselines.models.autoregressive import AutoregressiveSuffixModel
+from baselines.runtime.adapter import seeded
 from baselines.training.loss import Loss
 
 # The validation metric that selects the checkpoint, lower is better.
@@ -38,7 +38,7 @@ def _lr_factor(step: int, *, warmup_steps: int, max_steps: int, min_lr_factor: f
 
 @torch.no_grad()
 def validate_loss(
-    model: UncertaintyAwareEncoderDecoder, loader: DataLoader, *, device: torch.device, seed: int
+    model: AutoregressiveSuffixModel, loader: DataLoader, *, device: torch.device, seed: int
 ) -> Loss:
     """Average the teacher-forced loss over validation pairs, with draws seeded by `seed`."""
     with seeded(seed=seed, device=device):
@@ -53,7 +53,7 @@ def validate_loss(
 
 def train(
     *,
-    model: UncertaintyAwareEncoderDecoder,
+    model: AutoregressiveSuffixModel,
     train_loader: DataLoader,
     validation_loader: DataLoader,
     score: Callable[[], dict[str, float]],
@@ -107,8 +107,7 @@ def train(
         loss, metrics = model.compute_loss(model(batch), batch)
         optimizer.zero_grad()
         loss.backward()
-        if settings.grad_clip_norm is not None:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), settings.grad_clip_norm)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), settings.grad_clip_norm)
         learning_rate = config.optimizer.lr * _lr_factor(
             step,
             warmup_steps=config.optimizer.warmup_steps,
