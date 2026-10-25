@@ -10,7 +10,7 @@ from baselines.models.autoregressive import build_model
 from baselines.pipelines.helpers import output_path
 from baselines.runtime.adapter import TorchSuffixModel
 from baselines.runtime.checkpoint import save_checkpoint
-from baselines.training.train import SELECTION_METRIC, TrainingResult, train
+from baselines.training.train import SELECTION_FAMILY, SELECTION_METRIC, TrainingResult, train
 
 
 def run(config: DictConfig) -> TrainingResult:
@@ -69,7 +69,7 @@ def run(config: DictConfig) -> TrainingResult:
         tags=[config.data.name, config.model.label],
         config=experiment_config,
     )
-    wandb.define_metric(f'validation/{SELECTION_METRIC}', summary='min')
+    wandb.define_metric(f'validation_{SELECTION_FAMILY}/{SELECTION_METRIC}', summary='min')
     try:
         result = train(
             model=model,

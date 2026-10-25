@@ -1,4 +1,4 @@
-from dataclasses import dataclass, fields
+from dataclasses import Field, dataclass, field, fields
 from typing import Self
 
 from pseval.metrics.definitions.activity import activity
@@ -10,46 +10,52 @@ from pseval.metrics.definitions.support import support
 from pseval.metrics.inputs import MetricInputs
 
 
+def _family(name: str) -> Field:
+    """Declare a `PrefixScores` field as a metric of the family `name`."""
+    return field(metadata={'family': name})
+
+
 @dataclass(frozen=True, slots=True)
 class PrefixScores:
-    """Every metric of one prefix. Field order is the scores column order.
+    """Every metric of one prefix. Field order is the scores column order, and each field names
+    its family, the definition module that computes it.
 
     DLS is the normalized Damerau-Levenshtein similarity and DLD its distance. Scoring rules are
     fair, and truth quantiles are randomized PITs of the observed value among the draws.
     """
 
-    signature_kernel_score: float
+    signature_kernel_score: float = _family('joint')
 
-    dls_sample_mean: float
-    activity_dld_spread: float
+    dls_sample_mean: float = _family('activity')
+    activity_dld_spread: float = _family('activity')
     # Zero for a calibrated forecast, negative when overconfident.
-    activity_spread_error_gap: float
-    unique_suffix_ratio: float
-    energy_score_dls: float
-    energy_score_exact: float
+    activity_spread_error_gap: float = _family('activity')
+    unique_suffix_ratio: float = _family('activity')
+    energy_score_dls: float = _family('activity')
+    energy_score_exact: float = _family('activity')
     # On the multiset Jaccard distance between padded bigrams.
-    energy_score_bigram: float
+    energy_score_bigram: float = _family('activity')
 
-    suffix_length_crps: float
-    suffix_length_crps_error: float
-    suffix_length_crps_spread: float
-    suffix_length_signed_error: float
-    suffix_length_truth_quantile: float
-    truncated_draw_rate: float
+    suffix_length_crps: float = _family('suffix_length')
+    suffix_length_crps_error: float = _family('suffix_length')
+    suffix_length_crps_spread: float = _family('suffix_length')
+    suffix_length_signed_error: float = _family('suffix_length')
+    suffix_length_truth_quantile: float = _family('suffix_length')
+    truncated_draw_rate: float = _family('suffix_length')
 
-    remaining_time_crps_days: float
-    remaining_time_crps_error_days: float
-    remaining_time_crps_spread_days: float
+    remaining_time_crps_days: float = _family('remaining_time')
+    remaining_time_crps_error_days: float = _family('remaining_time')
+    remaining_time_crps_spread_days: float = _family('remaining_time')
     # On `log1p` days.
-    remaining_time_log_error: float
-    remaining_time_truth_quantile: float
+    remaining_time_log_error: float = _family('remaining_time')
+    remaining_time_truth_quantile: float = _family('remaining_time')
 
-    full_conformance_sample_rate: float
-    full_conformance_observed: float
+    full_conformance_sample_rate: float = _family('conformance')
+    full_conformance_observed: float = _family('conformance')
     # Mean fair Brier score of the completed trace witnessing each soft Declare rule.
-    declare_support_brier: float
+    declare_support_brier: float = _family('support')
     # Mean fair Brier score of the completed trace holding each vocabulary activity.
-    declare_activation_brier: float
+    declare_activation_brier: float = _family('support')
 
     @classmethod
     def of(cls, inputs: MetricInputs) -> Self:
@@ -64,7 +70,15 @@ class PrefixScores:
         )
 
 
-METRIC_KEYS = tuple(field.name for field in fields(PrefixScores))
+METRIC_KEYS = tuple(metric.name for metric in fields(PrefixScores))
+
+# Every metric key under its family, both in `METRIC_KEYS` order.
+METRIC_FAMILIES = {
+    family: tuple(
+        metric.name for metric in fields(PrefixScores) if metric.metadata['family'] == family
+    )
+    for family in dict.fromkeys(metric.metadata['family'] for metric in fields(PrefixScores))
+}
 
 # The proper scoring rules, lower is better. Models are ranked on them.
 PROPER_SCORES = (

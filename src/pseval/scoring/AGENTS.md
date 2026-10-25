@@ -12,7 +12,7 @@ to the numbers a paper reports. It also scores validation prefixes in memory for
 | `summary.py` | `Summary`: equal-weight means overall and by prefix and true suffix length. |
 | `skill.py` | `skill`: each proper score against the benchmark's unconditional reference. |
 | `reference.py` | `Unconditional`, the reference model whose scores every benchmark stores. |
-| `validation.py` | `validate`: in-memory means over the validation prefixes, every one or a seeded subset, writing no file. |
+| `validation.py` | `validate`: in-memory means by `METRIC_FAMILIES` family over the validation prefixes, every one or a seeded subset, writing no file. |
 
 ## Contracts
 
