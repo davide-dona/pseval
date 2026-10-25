@@ -1,0 +1,22 @@
+# @package _global_
+data:
+  name: bpic12
+  event_features:
+  - (case) AMOUNT_REQ
+  - ts_start
+  - day_sin
+  - day_cos
+  - seconds_sin
+  - seconds_cos
+  log_scaled_features:
+  - (case) AMOUNT_REQ
+  - ts_start
+  log_scaled_target_inter_event_time: false
+# The training regime of this dataset, over the defaults of train.yaml.
+optimizer:
+  lr: 0.0003
+training:
+  validation_pairs: 10000
+  validation_prefixes: 1000
+dataloader:
+  batch_size: 128

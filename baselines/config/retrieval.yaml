@@ -1,0 +1,17 @@
+data:
+  # The benchmark: sepsis, bpic12, bpic17, or bpic19.
+  name: ???
+run_id: ${now:%Y%m%d-%H%M%S-%f}
+num_samples: 100
+seed: 42
+# Prefixes per `sample` call.
+batch_size: 256
+benchmark_root: null
+hydra:
+  run:
+    dir: outputs/generate/${data.name}/retrieval/${run_id}
+  sweep:
+    dir: outputs/generate
+    subdir: ${data.name}/retrieval/${run_id}
+  job:
+    chdir: false

@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 
 from pseval.benchmark import Benchmark
@@ -9,30 +10,40 @@ def validate(
     model: SuffixModel,
     benchmark: Benchmark,
     *,
+    max_prefixes: int | None = None,
     num_samples: int = 32,
     seed: int = 42,
     batch_size: int = 256,
 ) -> dict[str, float]:
-    """Score a model on every validation prefix.
+    """Score a model on validation prefixes.
 
     Args:
         model: The model to score, its `sample` called on validation prefixes only.
         benchmark: The benchmark whose validation split to read.
+        max_prefixes: How many validation prefixes to score, drawn uniformly from `seed`, so
+            every call with the same seed scores the same ones. Every prefix when None or when the
+            split holds no more.
         num_samples: Draws per prefix, at least two.
-        seed: Seed of the draws.
+        seed: Seed of the prefix subset and of the draws.
         batch_size: Prefixes per `sample` call.
 
     Returns:
-        Every metric's equal-weight mean over the split, in `METRIC_KEYS` order. Which one
-        selects the model is its author's choice.
+        Every metric's equal-weight mean over the scored prefixes, in `METRIC_KEYS` order.
+        Which one selects the model is its author's choice.
 
     Raises:
-        ValueError: If the draws break the protocol contract, which also asks for at least two
-            draws per prefix.
+        ValueError: If `max_prefixes` is below one, or if the draws break the protocol contract,
+            which also asks for at least two draws per prefix.
     """
-    # Prepare the validation data
+    if max_prefixes is not None and max_prefixes < 1:
+        raise ValueError('max_prefixes must be at least one')
+    # Prepare the validation data, sorted by prefix length as generation does
     log = benchmark.validation
     cuts = log.cuts()
+    if max_prefixes is not None and max_prefixes < len(cuts):
+        drawn = np.random.default_rng(seed).choice(len(cuts), size=max_prefixes, replace=False)
+        cuts = [cuts[index] for index in drawn]
+    cuts = sorted(cuts, key=lambda cut: cut.prefix_len)
 
     scorer = benchmark.scorer
     scores = []

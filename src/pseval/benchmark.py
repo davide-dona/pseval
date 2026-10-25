@@ -123,7 +123,7 @@ def _directory_digest(directory: Path) -> str:
     return hashlib.sha256(json.dumps(digests, sort_keys=True).encode()).hexdigest()
 
 
-def load_benchmark(dataset: str, *, root: Path | None = None) -> Benchmark:
+def load_benchmark(dataset: str, *, root: str | Path | None = None) -> Benchmark:
     """Load a benchmark.
 
     Args:
@@ -137,14 +137,13 @@ def load_benchmark(dataset: str, *, root: Path | None = None) -> Benchmark:
     if root is None:
         from huggingface_hub import snapshot_download
 
-        root = Path(
-            snapshot_download(
-                repo_id=HUB_REPOSITORY,
-                repo_type='dataset',
-                revision=f'v{version("pseval")}',
-                allow_patterns=f'{dataset}/**',
-            )
+        root = snapshot_download(
+            repo_id=HUB_REPOSITORY,
+            repo_type='dataset',
+            revision=f'v{version("pseval")}',
+            allow_patterns=f'{dataset}/**',
         )
+    root = Path(root)
     if not (root / dataset).is_dir():
         raise ValueError(f'No {dataset!r} benchmark under {root}')
     benchmark = Benchmark(root / dataset)

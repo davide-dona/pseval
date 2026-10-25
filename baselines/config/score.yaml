@@ -1,0 +1,11 @@
+# The generation run directory, holding its `generations.parquet`.
+generate_dir: ???
+# Scoring processes, pseval's default when null.
+workers: null
+benchmark_root: null
+invocation_id: ${now:%Y%m%d-%H%M%S-%f}
+hydra:
+  run:
+    dir: ${generate_dir}/score/${invocation_id}
+  job:
+    chdir: false

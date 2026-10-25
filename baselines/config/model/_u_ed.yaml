@@ -1,0 +1,18 @@
+# The recipe both U-ED backbones share.
+d_model: 64
+embeddings:
+  activity_dim: 32
+  resource_dim: 16
+  feature_dim: 8
+# Variational dropout: one mask per sequence and site.
+dropout: 0.1
+activity_dropout: 0.3
+head_hidden_dim: 256
+log_variance:
+  min: -10.0
+  max: 10.0
+# Gaussian activity logits, drawn this many times in the loss. null for softmax logits trained
+# by cross-entropy.
+logit_samples: 20
+# Whether variational dropout stays active in generation, one mask per suffix.
+generation_dropout: true

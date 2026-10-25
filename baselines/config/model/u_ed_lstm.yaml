@@ -1,0 +1,8 @@
+defaults:
+- _u_ed
+- _self_
+# Names the model's runs and its rows in the generations and scores records.
+label: u_ed_lstm
+backbone:
+  kind: lstm
+  num_layers: 4

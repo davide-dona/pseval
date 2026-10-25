@@ -1,0 +1,16 @@
+# The training run directory, holding its `best.pt`.
+train_dir: ???
+num_samples: 100
+seed: 42
+# Prefixes per `sample` call.
+batch_size: 256
+# The most rows, prefixes times draws, decoded at once.
+max_rows: 8192
+device: cuda:0
+benchmark_root: null
+invocation_id: ${now:%Y%m%d-%H%M%S-%f}
+hydra:
+  run:
+    dir: ${train_dir}/generate/${invocation_id}
+  job:
+    chdir: false

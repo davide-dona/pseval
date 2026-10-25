@@ -1,0 +1,129 @@
+import math
+
+import torch
+from omegaconf import DictConfig
+from torch import nn
+
+from baselines.data.codec import Codec
+from baselines.data.dataset import Events
+from baselines.models.dropout import SequenceDropout
+
+
+class EventContentEmbedding(nn.Module):
+    """Project an event's activity, resource, time, and attributes to model width.
+
+    Row 0 of every table is PAD, embedded as zeros.
+    """
+
+    def __init__(self, config: DictConfig, codec: Codec, *, d_model: int):
+        """Build the embedding tables and projection from the dataset codec."""
+        super().__init__()
+        self.activity_embedding = nn.Embedding(
+            num_embeddings=codec.activity.num_rows,
+            embedding_dim=config.activity_dim,
+            padding_idx=0,
+        )
+        self.resource_embedding = nn.Embedding(
+            num_embeddings=codec.resource.num_rows,
+            embedding_dim=config.resource_dim,
+            padding_idx=0,
+        )
+        self.num_categorical = len(codec.categorical_features)
+        self.num_numeric = len(codec.numeric_features)
+
+        self.feature_embedding = (
+            nn.Embedding(
+                num_embeddings=codec.num_feature_categories,
+                embedding_dim=config.feature_dim,
+                padding_idx=0,
+            )
+            if self.num_categorical > 0
+            else None
+        )
+        # Two scalars per numeric attribute (value + presence); the inter-event time before an
+        # event is never missing, so it gets one.
+        self.projection = nn.Linear(
+            in_features=(
+                config.activity_dim
+                + config.resource_dim
+                + 1
+                + self.num_categorical * config.feature_dim
+                + 2 * self.num_numeric
+            ),
+            out_features=d_model,
+        )
+
+    def forward(self, events: Events) -> torch.Tensor:
+        """Embed event content as `[B, T, D]`, without positional information."""
+        channels = [
+            self.activity_embedding(events.activities),  # [B, T, A]
+            self.resource_embedding(events.resources),  # [B, T, R]
+            events.inter_event_times.unsqueeze(dim=-1),  # [B, T] -> [B, T, 1]
+        ]
+        if self.feature_embedding is not None:
+            features = self.feature_embedding(events.categorical_attributes)  # [B, T, C, F]
+            channels.append(features.flatten(start_dim=-2))  # [B, T, C * F]
+        channels.append(events.numeric_attributes)  # [B, T, N]
+        channels.append(events.numeric_attributes_present)  # [B, T, N]
+        event = torch.cat(tensors=channels, dim=-1)  # channels -> [B, T, projection.in_features]
+        return self.projection(event)  # [B, T, projection.in_features] -> [B, T, D]
+
+
+class EmbeddingInput(nn.Module):
+    """One stack's input: the shared event embedding, optional positions, dropout, and a norm.
+
+    The embedding is shared but the norm is not, so each stack reads one embedding space at
+    whatever scale it settles on.
+    """
+
+    def __init__(self, content: EventContentEmbedding, *, d_model: int, dropout: float) -> None:
+        super().__init__()
+        self.content = content
+        self.dropout = SequenceDropout(p=dropout, shape=(d_model,))
+        self.norm = nn.LayerNorm(normalized_shape=d_model)
+
+    def forward(self, events: Events, positions: torch.Tensor | None = None) -> torch.Tensor:
+        """Embed events `[B, T]` as `[B, T, D]`, adding position encodings `[B, T, D]` if given."""
+        embedded = self.content(events)
+        if positions is not None:
+            embedded = embedded + positions
+        return self.norm(self.dropout(embedded))
+
+
+def sinusoidal_encoding(values: torch.Tensor, width: int, *, base: float) -> torch.Tensor:
+    """Encode each value as interleaved sines and cosines at geometrically spaced frequencies.
+
+    Frequencies run from 1 down to `base^(-(width - 2) / width)`. With `base` set to the largest
+    value encoded, the slowest pair turns about one radian across the whole range, so no channel
+    stays near constant over the values the model actually sees.
+
+    Args:
+        values: The values to encode, `[...]`.
+        width: The width to encode them at; an odd width leaves the last channel a sine.
+        base: The spread of the frequencies, the largest value encoded.
+    Returns:
+        The encoding, `[..., width]`, in float32.
+    """
+    # exp(-log(base) * 2i / width) is base^(-2i/width) computed in log space, which keeps the
+    # smallest frequency from underflowing at wide `width`.
+    frequencies = torch.exp(
+        input=torch.arange(start=0, end=width, step=2, dtype=torch.float32, device=values.device)
+        * (-math.log(base) / width)
+    )  # [ceil(width / 2)]
+    angles = values.float().unsqueeze(dim=-1) * frequencies  # [..., 1] * [W] -> [..., W]
+
+    encoding = torch.zeros(size=(*values.shape, width), dtype=torch.float32, device=values.device)
+    encoding[..., 0::2] = torch.sin(input=angles)
+    # An odd `width` leaves the cosine half one channel short of the sine half.
+    encoding[..., 1::2] = torch.cos(input=angles[..., : width // 2])
+    return encoding
+
+
+def position_table(max_trace_length: int, d_model: int) -> torch.Tensor:
+    """Build the fixed table of trace positions, `[2 * max_trace_length, d_model]`.
+
+    A suffix continues the positions of its prefix, and its padded width can extend up to one
+    trace length past the longest prefix, so the table covers two trace lengths.
+    """
+    length = 2 * max_trace_length
+    return sinusoidal_encoding(values=torch.arange(end=length), width=d_model, base=float(length))

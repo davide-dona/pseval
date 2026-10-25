@@ -1,0 +1,34 @@
+# @package _global_
+data:
+  name: bpic19
+  event_features:
+  - case:Spend area text
+  - case:Company
+  - case:Document Type
+  - case:Sub spend area text
+  - case:Purch. Doc. Category name
+  - case:Vendor
+  - case:Item Type
+  - case:Item Category
+  - case:Spend classification text
+  - case:Source
+  - case:GR-Based Inv. Verif.
+  - case:Goods Receipt
+  - Cumulative net worth (EUR)
+  - ts_start
+  - day_sin
+  - day_cos
+  - seconds_sin
+  - seconds_cos
+  log_scaled_features:
+  - Cumulative net worth (EUR)
+  - ts_start
+  log_scaled_target_inter_event_time: false
+# The training regime of this dataset, over the defaults of train.yaml.
+optimizer:
+  lr: 0.0006
+training:
+  validation_pairs: 50000
+  validation_prefixes: 4096
+dataloader:
+  batch_size: 2048

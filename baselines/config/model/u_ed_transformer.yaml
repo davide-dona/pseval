@@ -1,0 +1,10 @@
+defaults:
+- _u_ed
+- _self_
+# Names the model's runs and its rows in the generations and scores records.
+label: u_ed_transformer
+backbone:
+  kind: transformer
+  num_layers: 4
+  num_heads: 4
+  feedforward_dim: 256
