@@ -6,7 +6,7 @@ from omegaconf import DictConfig
 from torch import nn
 
 from baselines.data.dataset import Events
-from baselines.models.dropout import SequenceDropout
+from baselines.models.dropout import DropoutScheme, DropoutSite
 from baselines.models.embeddings import EmbeddingInput, EventContentEmbedding, position_table
 
 
@@ -27,11 +27,17 @@ class ProjectedKeysValues:
 
 
 class MultiHeadAttention(nn.Module):
-    """Multi-head attention with cached key/value projections and no attention-weight dropout,
-    which has no analog shared across positions."""
+    """Multi-head attention with cached key/value projections."""
 
-    def __init__(self, *, d_model: int, num_heads: int) -> None:
+    def __init__(self, *, d_model: int, num_heads: int, dropout: float) -> None:
+        """
+        Args:
+            d_model: The width attended at.
+            num_heads: The heads `d_model` is split into.
+            dropout: The attention-weight dropout rate in training mode.
+        """
         super().__init__()
+        self.dropout = dropout
         self.num_heads = num_heads
         self.head_dim = d_model // num_heads
         self.query_projection = nn.Linear(in_features=d_model, out_features=d_model)
@@ -81,6 +87,7 @@ class MultiHeadAttention(nn.Module):
             key=keys_values.keys,
             value=keys_values.values,
             attn_mask=attention_mask,
+            dropout_p=self.dropout if self.training else 0.0,
             is_causal=causal,
         )  # [B, H, T, Dh]
         merged = attended.transpose(dim0=1, dim1=2).reshape(
@@ -96,14 +103,14 @@ class MultiHeadAttention(nn.Module):
 
 
 class FeedForward(nn.Module):
-    """Position-wise two-layer perceptron with variational dropout on its hidden features."""
+    """Position-wise two-layer perceptron with dropout on its hidden features."""
 
-    def __init__(self, *, d_model: int, feedforward_dim: int, dropout: float) -> None:
+    def __init__(self, *, d_model: int, feedforward_dim: int, dropout: DropoutSite) -> None:
         super().__init__()
         self.layers = nn.Sequential(
             nn.Linear(in_features=d_model, out_features=feedforward_dim),
             nn.ReLU(),
-            SequenceDropout(p=dropout, shape=(feedforward_dim,)),
+            dropout(shape=(feedforward_dim,)),
             nn.Linear(in_features=feedforward_dim, out_features=d_model),
         )
 
@@ -114,16 +121,18 @@ class FeedForward(nn.Module):
 class EncoderLayer(nn.Module):
     """Pre-norm bidirectional self-attention over prefix events."""
 
-    def __init__(self, config: DictConfig, *, d_model: int, dropout: float) -> None:
+    def __init__(self, config: DictConfig, *, d_model: int, dropout: DropoutScheme) -> None:
         super().__init__()
-        self.attention = MultiHeadAttention(d_model=d_model, num_heads=config.num_heads)
+        self.attention = MultiHeadAttention(
+            d_model=d_model, num_heads=config.num_heads, dropout=dropout.attention
+        )
         self.feedforward = FeedForward(
-            d_model=d_model, feedforward_dim=config.feedforward_dim, dropout=dropout
+            d_model=d_model, feedforward_dim=config.feedforward_dim, dropout=dropout.site
         )
         self.attention_norm = nn.LayerNorm(normalized_shape=d_model)
         self.feedforward_norm = nn.LayerNorm(normalized_shape=d_model)
-        self.attention_dropout = SequenceDropout(p=dropout, shape=(d_model,))
-        self.feedforward_dropout = SequenceDropout(p=dropout, shape=(d_model,))
+        self.attention_dropout = dropout.site(shape=(d_model,))
+        self.feedforward_dropout = dropout.site(shape=(d_model,))
 
     def forward(self, hidden: torch.Tensor, *, pad_mask: torch.Tensor) -> torch.Tensor:
         """Run one layer over prefix events `[B, P, D]`, padding marked by `pad_mask` `[B, P]`."""
@@ -154,19 +163,23 @@ class LayerCache:
 class DecoderLayer(nn.Module):
     """Pre-norm causal self-attention over the suffix and cross-attention over the prefix."""
 
-    def __init__(self, config: DictConfig, *, d_model: int, dropout: float) -> None:
+    def __init__(self, config: DictConfig, *, d_model: int, dropout: DropoutScheme) -> None:
         super().__init__()
-        self.self_attention = MultiHeadAttention(d_model=d_model, num_heads=config.num_heads)
-        self.cross_attention = MultiHeadAttention(d_model=d_model, num_heads=config.num_heads)
+        self.self_attention = MultiHeadAttention(
+            d_model=d_model, num_heads=config.num_heads, dropout=dropout.attention
+        )
+        self.cross_attention = MultiHeadAttention(
+            d_model=d_model, num_heads=config.num_heads, dropout=dropout.attention
+        )
         self.feedforward = FeedForward(
-            d_model=d_model, feedforward_dim=config.feedforward_dim, dropout=dropout
+            d_model=d_model, feedforward_dim=config.feedforward_dim, dropout=dropout.site
         )
         self.self_attention_norm = nn.LayerNorm(normalized_shape=d_model)
         self.cross_attention_norm = nn.LayerNorm(normalized_shape=d_model)
         self.feedforward_norm = nn.LayerNorm(normalized_shape=d_model)
-        self.self_attention_dropout = SequenceDropout(p=dropout, shape=(d_model,))
-        self.cross_attention_dropout = SequenceDropout(p=dropout, shape=(d_model,))
-        self.feedforward_dropout = SequenceDropout(p=dropout, shape=(d_model,))
+        self.self_attention_dropout = dropout.site(shape=(d_model,))
+        self.cross_attention_dropout = dropout.site(shape=(d_model,))
+        self.feedforward_dropout = dropout.site(shape=(d_model,))
 
     def forward(self, hidden: torch.Tensor, *, prefix: 'EncodedPrefix') -> torch.Tensor:
         """Run one layer over every suffix position `[B, T, D]` under a causal mask."""
@@ -263,28 +276,27 @@ class TransformerBackbone(nn.Module):
         content: EventContentEmbedding,
         *,
         d_model: int,
-        dropout: float,
-        max_trace_length: int,
+        dropout: DropoutScheme,
     ) -> None:
         """
         Args:
             config: The `backbone` section: layers, heads, and feedforward width.
-            content: The event embedding shared by encoder and decoder.
+            content: The event embedding shared by encoder and decoder, whose length cap sizes
+                the position table.
             d_model: The width the stacks run at.
-            dropout: The variational dropout rate of every site.
-            max_trace_length: The longest case, which sizes the position table.
+            dropout: The dropout of every site and of the attention weights.
         """
         super().__init__()
         self.register_buffer(
             name='positional_encoding',
-            tensor=position_table(max_trace_length=max_trace_length, d_model=d_model),
+            tensor=position_table(max_trace_length=content.max_trace_length, d_model=d_model),
         )
-        self.encoder_input = EmbeddingInput(content, d_model=d_model, dropout=dropout)
+        self.encoder_input = EmbeddingInput(content, d_model=d_model, dropout=dropout.site)
         self.encoder_layers = nn.ModuleList(
             EncoderLayer(config, d_model=d_model, dropout=dropout) for _ in range(config.num_layers)
         )
         self.encoder_norm = nn.LayerNorm(normalized_shape=d_model)
-        self.decoder_input = EmbeddingInput(content, d_model=d_model, dropout=dropout)
+        self.decoder_input = EmbeddingInput(content, d_model=d_model, dropout=dropout.site)
         self.decoder_layers = nn.ModuleList(
             DecoderLayer(config, d_model=d_model, dropout=dropout) for _ in range(config.num_layers)
         )

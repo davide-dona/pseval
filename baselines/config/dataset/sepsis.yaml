@@ -37,7 +37,6 @@ data:
   - LacticAcid
   - Leucocytes
   - ts_start
-  log_scaled_target_inter_event_time: false
 # The training regime of this dataset, over the defaults of train.yaml.
 optimizer:
   lr: 0.0003

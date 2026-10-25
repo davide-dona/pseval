@@ -1,0 +1,2 @@
+_target_: baselines.models.lstm.LSTMBackbone
+num_layers: 4

@@ -17,10 +17,6 @@ SECONDS_COS_KEY = 'seconds_cos'
 def derive_features(events: pd.DataFrame, offsets: np.ndarray) -> pd.DataFrame:
     """Add each event's case elapsed minutes and calendar position.
 
-    Both are read off the event and the ones before it, so a prefix derives them exactly as its
-    whole case does: the calendar from the event's own timestamp, and the elapsed minutes as the
-    run's inter-event minutes summed so far, zero at a run's first event, which is its case's.
-
     Args:
         events: One row per event, each run's rows consecutive and in time order.
         offsets: `[runs + 1]` row where each run starts, then the past-the-end row. A run is a

@@ -5,8 +5,8 @@ import torch
 from omegaconf import DictConfig
 
 import pseval
-from baselines.adapter import TorchSuffixModel
-from baselines.checkpoint import load_checkpoint, restore_model
+from baselines.models.adapter import TorchSuffixModel
+from baselines.models.checkpoint import load_checkpoint, restore_model
 from baselines.pipelines.helpers import output_path
 
 

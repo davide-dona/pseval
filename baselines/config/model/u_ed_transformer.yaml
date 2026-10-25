@@ -1,10 +1,16 @@
 defaults:
-- _u_ed
+- _sizes
+- backbone: transformer
 - _self_
+_target_: baselines.models.u_ed.UncertaintyAwareEncoderDecoder
 # Names the model's runs and its rows in the generations and scores records.
 label: u_ed_transformer
-backbone:
-  kind: transformer
-  num_layers: 4
-  num_heads: 4
-  feedforward_dim: 256
+# Variational dropout: one mask per sequence and site, in training and, one per suffix, in
+# generation.
+dropout: 0.1
+activity_dropout: 0.3
+log_variance:
+  min: -10.0
+  max: 10.0
+# Gaussian activity logits, drawn this many times in the loss.
+logit_samples: 20

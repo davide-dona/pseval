@@ -1,0 +1,7 @@
+# The widths every autoregressive baseline shares; each backbone file holds its own depth.
+d_model: 64
+embeddings:
+  activity_dim: 32
+  resource_dim: 16
+  feature_dim: 8
+head_hidden_dim: 256

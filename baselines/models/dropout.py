@@ -1,3 +1,7 @@
+from dataclasses import dataclass
+from functools import partial
+from typing import Protocol
+
 import torch
 from torch import nn
 
@@ -42,6 +46,32 @@ class SequenceDropout(nn.Module):
             return values
         mask = self.mask if values.dim() == self.mask.dim() else self.mask.unsqueeze(dim=1)
         return values * mask
+
+
+class DropoutSite(Protocol):
+    """Builds the dropout module of one site, given the shape of one row's mask."""
+
+    def __call__(self, *, shape: tuple[int, ...]) -> nn.Module: ...
+
+
+@dataclass(frozen=True)
+class DropoutScheme:
+    """How a model drops features: the module at every site and the attention-weight rate."""
+
+    site: DropoutSite
+    attention: float
+
+
+def variational_dropout(p: float) -> DropoutScheme:
+    """One `SequenceDropout` mask per sequence and site, and no attention-weight dropout, which
+    has no analog shared across positions."""
+    return DropoutScheme(site=partial(SequenceDropout, p=p), attention=0.0)
+
+
+def standard_dropout(p: float) -> DropoutScheme:
+    """A fresh `nn.Dropout` mask per element at every site and on the attention weights, active
+    in training mode only."""
+    return DropoutScheme(site=lambda *, shape: nn.Dropout(p=p), attention=p)
 
 
 def resample_masks(module: nn.Module, *, rows: int, device: torch.device, active: bool) -> None:

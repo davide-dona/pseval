@@ -5,7 +5,7 @@ from omegaconf import DictConfig
 from torch import nn
 
 from baselines.data.dataset import Events
-from baselines.models.dropout import SequenceDropout
+from baselines.models.dropout import DropoutScheme, DropoutSite
 from baselines.models.embeddings import EmbeddingInput, EventContentEmbedding
 
 # Per-layer hidden and cell states, `[B, D]` each.
@@ -38,15 +38,15 @@ def _lstm_step(
     return output_gate.sigmoid() * cell.tanh(), cell
 
 
-class VariationalLSTMCell(nn.Module):
-    """LSTM layer with one dropout mask per sequence on each gate's input and hidden state.
+class GateDropoutLSTMCell(nn.Module):
+    """LSTM layer with dropout on each gate's input and hidden state.
 
-    The recurrent path is masked as Gal and Ghahramani do, which cuDNN's `nn.LSTM` cannot. The
-    input mask is fixed per sequence, so every position's input projection runs as one product
-    before the recurrence.
+    Under `SequenceDropout` the recurrent path is masked as Gal and Ghahramani do, which cuDNN's
+    `nn.LSTM` cannot. Every position's input projection runs as one product before the
+    recurrence.
     """
 
-    def __init__(self, *, input_size: int, hidden_size: int, dropout: float) -> None:
+    def __init__(self, *, input_size: int, hidden_size: int, dropout: DropoutSite) -> None:
         super().__init__()
         bound = 1.0 / math.sqrt(hidden_size)
         # Initialized as `nn.LSTM`: every weight and bias uniform in [-bound, bound].
@@ -57,8 +57,8 @@ class VariationalLSTMCell(nn.Module):
             torch.empty(4, hidden_size, hidden_size).uniform_(-bound, bound)
         )
         self.bias = nn.Parameter(torch.empty(4, hidden_size).uniform_(-bound, bound))
-        self.input_dropout = SequenceDropout(p=dropout, shape=(4, input_size))
-        self.hidden_dropout = SequenceDropout(p=dropout, shape=(4, hidden_size))
+        self.input_dropout = dropout(shape=(4, input_size))
+        self.hidden_dropout = dropout(shape=(4, hidden_size))
 
     def forward(
         self,
@@ -104,24 +104,29 @@ class LSTMBackbone(nn.Module):
     decoder's. No attention over prefix events and no position table: order is the recurrence."""
 
     def __init__(
-        self, config: DictConfig, content: EventContentEmbedding, *, d_model: int, dropout: float
+        self,
+        config: DictConfig,
+        content: EventContentEmbedding,
+        *,
+        d_model: int,
+        dropout: DropoutScheme,
     ) -> None:
         """
         Args:
             config: The `backbone` section: layers per stack.
             content: The event embedding shared by encoder and decoder.
             d_model: The width of every state.
-            dropout: The variational dropout rate of every site.
+            dropout: The dropout of every site; without attention, its attention rate is unused.
         """
         super().__init__()
-        self.encoder_input = EmbeddingInput(content, d_model=d_model, dropout=dropout)
+        self.encoder_input = EmbeddingInput(content, d_model=d_model, dropout=dropout.site)
         self.encoder_cells = nn.ModuleList(
-            VariationalLSTMCell(input_size=d_model, hidden_size=d_model, dropout=dropout)
+            GateDropoutLSTMCell(input_size=d_model, hidden_size=d_model, dropout=dropout.site)
             for _ in range(config.num_layers)
         )
-        self.decoder_input = EmbeddingInput(content, d_model=d_model, dropout=dropout)
+        self.decoder_input = EmbeddingInput(content, d_model=d_model, dropout=dropout.site)
         self.decoder_cells = nn.ModuleList(
-            VariationalLSTMCell(input_size=d_model, hidden_size=d_model, dropout=dropout)
+            GateDropoutLSTMCell(input_size=d_model, hidden_size=d_model, dropout=dropout.site)
             for _ in range(config.num_layers)
         )
 

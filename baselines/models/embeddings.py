@@ -6,7 +6,7 @@ from torch import nn
 
 from baselines.data.codec import Codec
 from baselines.data.dataset import Events
-from baselines.models.dropout import SequenceDropout
+from baselines.models.dropout import DropoutSite
 
 
 class EventContentEmbedding(nn.Module):
@@ -28,6 +28,8 @@ class EventContentEmbedding(nn.Module):
             embedding_dim=config.resource_dim,
             padding_idx=0,
         )
+        # The benchmark's length cap, which sizes a position table.
+        self.max_trace_length = codec.max_trace_length
         self.num_categorical = len(codec.categorical_features)
         self.num_numeric = len(codec.numeric_features)
 
@@ -76,10 +78,12 @@ class EmbeddingInput(nn.Module):
     whatever scale it settles on.
     """
 
-    def __init__(self, content: EventContentEmbedding, *, d_model: int, dropout: float) -> None:
+    def __init__(
+        self, content: EventContentEmbedding, *, d_model: int, dropout: DropoutSite
+    ) -> None:
         super().__init__()
         self.content = content
-        self.dropout = SequenceDropout(p=dropout, shape=(d_model,))
+        self.dropout = dropout(shape=(d_model,))
         self.norm = nn.LayerNorm(normalized_shape=d_model)
 
     def forward(self, events: Events, positions: torch.Tensor | None = None) -> torch.Tensor:

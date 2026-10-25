@@ -6,7 +6,7 @@ from torch import nn
 
 import pseval
 from baselines.data.codec import Codec
-from baselines.models.u_ed import UncertaintyAwareEncoderDecoder
+from baselines.models.autoregressive import AutoregressiveSuffixModel, build_model
 
 # What every checkpoint holds: the resolved run configuration, the digest of the benchmark it was
 # trained on, the selected weights, and the step and validation score they were selected at.
@@ -53,7 +53,7 @@ def load_checkpoint(path: Path) -> dict:
 
 def restore_model(
     checkpoint: dict, benchmark: pseval.Benchmark
-) -> tuple[UncertaintyAwareEncoderDecoder, Codec]:
+) -> tuple[AutoregressiveSuffixModel, Codec]:
     """Rebuild a checkpoint's model, refitting its codec on the benchmark it was trained on.
 
     Raises:
@@ -66,6 +66,6 @@ def restore_model(
         )
     config = OmegaConf.create(checkpoint['config'])
     codec = Codec.fit(benchmark, config.data)
-    model = UncertaintyAwareEncoderDecoder(config.model, codec)
+    model = build_model(config.model, codec)
     model.load_state_dict(checkpoint['model_state_dict'])
     return model, codec

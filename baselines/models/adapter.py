@@ -6,7 +6,7 @@ import torch
 
 from baselines.data.codec import Codec
 from baselines.data.dataset import encode_prefixes
-from baselines.models.u_ed import GeneratedSuffix, UncertaintyAwareEncoderDecoder
+from baselines.models.autoregressive import AutoregressiveSuffixModel, GeneratedSuffix
 from pseval import Draw, Forecast, PrefixBatch, SuffixModel
 
 
@@ -24,11 +24,11 @@ def seeded(*, seed: int, device: torch.device) -> Iterator[None]:
 
 
 class TorchSuffixModel(SuffixModel):
-    """A torch U-ED model as pseval samples it: prefixes in log units in, named draws out."""
+    """A torch baseline as pseval samples it: prefixes in log units in, named draws out."""
 
     def __init__(
         self,
-        model: UncertaintyAwareEncoderDecoder,
+        model: AutoregressiveSuffixModel,
         codec: Codec,
         *,
         device: torch.device,
