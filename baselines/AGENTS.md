@@ -8,7 +8,7 @@ Baselines use pseval exactly as an external user does: through its public API, f
 scoring with `pseval.generate` and `pseval.score`. Nothing under `src/pseval/` may import from
 here, and this directory is not part of the wheel.
 
-Their extra dependencies (Hydra, W&B) are the `baselines` dependency group:
+Their extra dependencies (Hydra, W&B, Matplotlib) are the `baselines` dependency group:
 
 ```sh
 uv sync --group baselines
@@ -33,6 +33,7 @@ uv sync --group baselines
 | `runtime/adapter.py` | `TorchSuffixModel`, an autoregressive model as a `pseval.SuffixModel`, and seeded draws. |
 | `runtime/checkpoint.py` | Checkpoint contents, saving, loading, and `restore_model`. |
 | `training/` | The loss record, trace normalization, and the training loop with its W&B logging. |
+| `report/` | The paper figures and tables over scores files: `style.py` with display labels and the paper style, `figures.py`, `tables.py`, and `significance.py` with the table emphasis. |
 | `pipelines/` | Hydra entry points, one per stage. |
 | `config/` | Hydra configuration: stages, `dataset/` with each dataset's regime, and `model/` with `_sizes.yaml`, `backbone/`, and one file per model. |
 
@@ -46,13 +47,16 @@ uv run python -m baselines.pipelines.train dataset=sepsis model=u_ed_transformer
 uv run python -m baselines.pipelines.generate train_dir=outputs/train/sepsis/u_ed_transformer/<run>
 uv run python -m baselines.pipelines.retrieval data.name=sepsis
 uv run python -m baselines.pipelines.score generate_dir=outputs/generate/sepsis/retrieval/<run>
+uv run python -m baselines.pipelines.report 'scores=[outputs]'
 ```
 
 `model` is `u_ed_transformer`, `u_ed_lstm`, or `transformer`. Training writes `best.pt`
 under `outputs/train/<dataset>/<label>/<run>/`, generation reads a training run's `best.pt` and
 writes `generations.parquet` under its `generate/<invocation>/`, and scoring reads a generation
 run's `generations.parquet` and writes `scores.parquet` under its `score/<invocation>/`, printing
-the means and the skill. Inspect a resolved configuration with
+the means and the skill. The report reads every `scores.parquet` under the given files or
+directories, at most one per dataset and label, and writes `figures/` and `tables/` under
+`outputs/report/<invocation>/`. Inspect a resolved configuration with
 `--cfg job --resolve`.
 
 ## Contracts
@@ -74,6 +78,12 @@ the means and the skill. Inspect a resolved configuration with
 - `TorchSuffixModel.sample` draws inside `seeded`, so draws depend on the prefixes and the seed
   alone and leave the training random stream untouched. Generation reads nothing past a prefix.
 - Retrieval has nothing to select, so it reads neither validation data nor a checkpoint.
+- The report reads the skill, overall and by length, only through `pseval.skill`, and leaves out
+  the unconditional reference. Every reported model and dataset needs a display label in
+  `report/style.py`. Length buckets with fewer than `MIN_BUCKET_PREFIXES` prefixes are not drawn.
+- The skill table bolds, per dataset and proper score, the lowest mean and every model whose
+  paired case-bootstrap mean difference to it has an `ALPHA / (models - 1)` quantile at or below
+  zero: a one-sided test, Bonferroni-corrected. Bold is no evidence of equivalence.
 
 ## Autoregressive Recipe
 

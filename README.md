@@ -25,5 +25,5 @@ generations = pseval.generate(
 with pseval.ScoresReader(pseval.score(generations, benchmark)) as reader:
     scores = reader.read()
 print(scores.summary().overall)
-print(pseval.skill(scores, benchmark))
+print(pseval.skill(scores, benchmark).overall)
 ```
