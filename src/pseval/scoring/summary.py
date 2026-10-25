@@ -7,9 +7,9 @@ import pandas as pd
 
 @dataclass(frozen=True, eq=False)
 class Summary:
-    """Equal-weight means of every metric, overall and by length.
+    """One value per metric, overall and by length: equal-weight means, or their skill.
 
-    `overall` holds one mean per metric. `by_prefix_length` and `by_suffix_length` hold one row
+    `overall` holds one value per metric. `by_prefix_length` and `by_suffix_length` hold one row
     per length present, ascending, with a `prefixes` column counting its prefixes.
     """
 

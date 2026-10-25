@@ -1,0 +1,9 @@
+# Scores files, or directories searched for them, at most one per dataset and model label.
+scores: ???
+benchmark_root: null
+invocation_id: ${now:%Y%m%d-%H%M%S-%f}
+hydra:
+  run:
+    dir: outputs/report/${invocation_id}
+  job:
+    chdir: false

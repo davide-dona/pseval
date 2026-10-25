@@ -19,7 +19,7 @@ def run(config: DictConfig) -> Path:
     with pseval.ScoresReader(path) as reader:
         scores = reader.read()
     print(f'Wrote {path}\n\nMeans\n{scores.summary().overall.to_string()}\n\nSkill')
-    for key, value in pseval.skill(scores, benchmark).items():
+    for key, value in pseval.skill(scores, benchmark).overall.items():
         print(f'{key}  {value:.4f}')
     return path
 
