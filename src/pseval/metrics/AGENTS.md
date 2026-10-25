@@ -10,7 +10,7 @@ joining each with its prefix and observed suffix as a `Pairing`; file handling b
 | Module | Owns |
 | --- | --- |
 | `scorer.py` | `Scorer`: fit, save, load, `require_forecast`, and batch scoring. |
-| `columns.py` | `PrefixScores`, `METRIC_KEYS`, and `PROPER_SCORES`. |
+| `columns.py` | `PrefixScores`, `METRIC_KEYS`, `METRIC_FAMILIES`, and `PROPER_SCORES`. |
 | `inputs.py` | `Pairing`, and `MetricInputs`: a pairing and the values its metrics share. |
 | `definitions/` | One function per metric group, mapping `MetricInputs` to its columns. |
 | `functions/` | Pure numeric helpers: scoring rules, randomized PIT, and sequence distances. |

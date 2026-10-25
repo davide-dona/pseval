@@ -14,7 +14,7 @@ import pseval
 
 benchmark = pseval.load_benchmark('sepsis')
 model = train(benchmark.train, benchmark.validation)  # yours
-print(pseval.validate(model, benchmark)['signature_kernel_score'])
+print(pseval.validate(model, benchmark)['joint']['signature_kernel_score'])
 
 generations = pseval.generate(
     model,

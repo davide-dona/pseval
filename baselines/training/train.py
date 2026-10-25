@@ -13,8 +13,8 @@ from baselines.models.autoregressive import AutoregressiveSuffixModel
 from baselines.runtime.adapter import seeded
 from baselines.training.loss import Loss
 
-# The validation metric that selects the checkpoint, lower is better.
-SELECTION_METRIC = 'signature_kernel_score'
+# The validation metric that selects the checkpoint, lower is better, and its family.
+SELECTION_FAMILY, SELECTION_METRIC = 'joint', 'signature_kernel_score'
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,7 +56,7 @@ def train(
     model: AutoregressiveSuffixModel,
     train_loader: DataLoader,
     validation_loader: DataLoader,
-    score: Callable[[], dict[str, float]],
+    score: Callable[[], dict[str, dict[str, float]]],
     config: DictConfig,
     on_best: Callable[[int, float], None],
 ) -> TrainingResult:
@@ -135,14 +135,19 @@ def train(
         scoring_seconds = perf_counter() - started
         wandb.log(
             {f'val/{key}': value for key, value in val_metrics.as_metrics().items()}
-            | {f'validation/{key}': value for key, value in scores.items()},
+            | {
+                f'validation_{family}/{key}': value
+                for family, metrics in scores.items()
+                for key, value in metrics.items()
+            },
             step=step,
         )
-        selection = scores[SELECTION_METRIC]
+        selection = scores[SELECTION_FAMILY][SELECTION_METRIC]
         print(
             f'Step {step:>{len(str(settings.max_steps))}}/{settings.max_steps}  '
             f'train {(interval_totals / seen).loss:.4f}  val {val_metrics.loss:.4f}  '
-            f'dls {scores["dls_sample_mean"]:.4f}  energy {scores["energy_score_dls"]:.4f}  '
+            f'dls {scores["activity"]["dls_sample_mean"]:.4f}  '
+            f'energy {scores["activity"]["energy_score_dls"]:.4f}  '
             f'kernel {selection:.4f}  scoring {scoring_seconds:.1f}s',
             flush=True,
         )

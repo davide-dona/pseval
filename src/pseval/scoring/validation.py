@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 
 from pseval.benchmark import Benchmark
+from pseval.metrics import METRIC_FAMILIES
 from pseval.model import SuffixModel, batch_seed, forecast
 from pseval.scoring.summary import means
 
@@ -14,7 +15,7 @@ def validate(
     num_samples: int = 32,
     seed: int = 42,
     batch_size: int = 256,
-) -> dict[str, float]:
+) -> dict[str, dict[str, float]]:
     """Score a model on validation prefixes.
 
     Args:
@@ -28,8 +29,9 @@ def validate(
         batch_size: Prefixes per `sample` call.
 
     Returns:
-        Every metric's equal-weight mean over the scored prefixes, in `METRIC_KEYS` order.
-        Which one selects the model is its author's choice.
+        Every metric's equal-weight mean over the scored prefixes, grouped by family, with
+        families and metrics in `METRIC_FAMILIES` order. Which one selects the model is its
+        author's choice.
 
     Raises:
         ValueError: If `max_prefixes` is below one, or if the draws break the protocol contract,
@@ -59,4 +61,5 @@ def validate(
                 log, list(zip(batch_cuts, forecasts, strict=True)), num_samples=num_samples
             )
         )
-    return means(pd.concat(scores, ignore_index=True)).to_dict()
+    overall = means(pd.concat(scores, ignore_index=True))
+    return {family: {key: overall[key] for key in keys} for family, keys in METRIC_FAMILIES.items()}
