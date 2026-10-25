@@ -143,7 +143,8 @@ def train(
         print(
             f'Step {step:>{len(str(settings.max_steps))}}/{settings.max_steps}  '
             f'train {(interval_totals / seen).loss:.4f}  val {val_metrics.loss:.4f}  '
-            f'{SELECTION_METRIC} {selection:.4f}  scoring {scoring_seconds:.1f}s',
+            f'dls {scores["dls_sample_mean"]:.4f}  energy {scores["energy_score_dls"]:.4f}  '
+            f'kernel {selection:.4f}  scoring {scoring_seconds:.1f}s',
             flush=True,
         )
         interval_totals, seen = Loss(), 0
