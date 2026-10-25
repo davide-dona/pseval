@@ -10,8 +10,12 @@ from torch import nn
 
 from baselines.data.codec import Codec
 from baselines.data.dataset import Events, TraceCut
-from baselines.models.dropout import DropoutScheme, resample_masks, select_masks
-from baselines.models.embeddings import EventContentEmbedding
+from baselines.modules.dropout import (
+    DropoutScheme,
+    resample_masks,
+    select_masks,
+)
+from baselines.modules.embeddings import EventContentEmbedding
 from baselines.training.loss import Loss, reconstruction_loss
 
 # Generation checks how many rows are still writing once every this many steps, since the check

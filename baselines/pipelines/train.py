@@ -6,10 +6,10 @@ from omegaconf import DictConfig, OmegaConf
 import pseval
 from baselines.data.codec import Codec
 from baselines.data.dataset import TraceDataset, batches, fixed_subset
-from baselines.models.adapter import TorchSuffixModel
 from baselines.models.autoregressive import build_model
-from baselines.models.checkpoint import save_checkpoint
 from baselines.pipelines.helpers import output_path
+from baselines.runtime.adapter import TorchSuffixModel
+from baselines.runtime.checkpoint import save_checkpoint
 from baselines.training.train import SELECTION_METRIC, TrainingResult, train
 
 

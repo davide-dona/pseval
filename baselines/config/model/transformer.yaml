@@ -5,7 +5,7 @@ defaults:
 _target_: baselines.models.ed.EncoderDecoder
 # Names the model's runs and its rows in the generations and scores records.
 label: transformer
-# Variational dropout: one mask per sequence and site, in training only.
+# Standard dropout at every site and on the attention weights, in training only.
 dropout: 0.1
 activity_dropout: 0.3
 log_variance:

@@ -1,4 +1,4 @@
-_target_: baselines.models.transformer.TransformerBackbone
+_target_: baselines.backbones.transformer.TransformerBackbone
 num_layers: 4
 num_heads: 4
 feedforward_dim: 256

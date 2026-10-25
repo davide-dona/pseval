@@ -21,16 +21,17 @@ uv sync --group baselines
 | `data/features.py` | Derived event features: case elapsed minutes and calendar position. |
 | `data/codec.py` | `Codec`, fitted on a benchmark's train split: activity, resource, feature, and time encodings, without torch. |
 | `data/dataset.py` | `Events`, `TraceCut`, `TraceDataset` and its `batches` loader over a `Log`, and `encode_prefixes` over a `PrefixBatch`. |
-| `models/embeddings.py` | Event content embedding, each stack's `EmbeddingInput`, and sinusoidal position tables. |
-| `models/dropout.py` | `SequenceDropout`, the variational dropout every autoregressive site uses. |
-| `models/transformer.py` | The SuTraN encoder-decoder backbone with its key/value cache. |
-| `models/lstm.py` | The stacked LSTM backbone and its compiled gate-dropout cell. |
+| `models/` | What draws suffixes. |
+| `models/retrieval.py` | Retrieval, a `pseval.SuffixModel` on activity names, without torch. |
 | `models/autoregressive.py` | `AutoregressiveSuffixModel`, the shared base: backbone, heads, time loss, and the generation loop, and `build_model`. |
 | `models/u_ed.py` | `UncertaintyAwareEncoderDecoder`: Gaussian activity logits and dropout in generation. |
 | `models/ed.py` | `EncoderDecoder`: softmax activities from one deterministic network in generation. |
-| `models/adapter.py` | `TorchSuffixModel`, an autoregressive model as a `pseval.SuffixModel`, and seeded draws. |
-| `models/checkpoint.py` | Checkpoint contents, saving, loading, and `restore_model`. |
-| `models/retrieval.py` | Retrieval, a `pseval.SuffixModel` on activity names, without torch. |
+| `backbones/transformer.py` | The SuTraN encoder-decoder backbone with its key/value cache. |
+| `backbones/lstm.py` | The stacked LSTM backbone and its compiled gate-dropout cell. |
+| `modules/embeddings.py` | Event content embedding, each stack's `EmbeddingInput`, and sinusoidal position tables. |
+| `modules/dropout.py` | `SequenceDropout`, the dropout schemes, and the mask resampling every site shares. |
+| `runtime/adapter.py` | `TorchSuffixModel`, an autoregressive model as a `pseval.SuffixModel`, and seeded draws. |
+| `runtime/checkpoint.py` | Checkpoint contents, saving, loading, and `restore_model`. |
 | `training/` | The loss record, trace normalization, and the training loop with its W&B logging. |
 | `pipelines/` | Hydra entry points, one per stage. |
 | `config/` | Hydra configuration: stages, `dataset/` with each dataset's regime, and `model/` with `_sizes.yaml`, `backbone/`, and one file per model. |

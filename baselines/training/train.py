@@ -9,8 +9,8 @@ from omegaconf import DictConfig
 from torch import optim
 from torch.utils.data import DataLoader
 
-from baselines.models.adapter import seeded
 from baselines.models.autoregressive import AutoregressiveSuffixModel
+from baselines.runtime.adapter import seeded
 from baselines.training.loss import Loss
 
 # The validation metric that selects the checkpoint, lower is better.

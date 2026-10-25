@@ -5,8 +5,8 @@ from omegaconf import DictConfig
 from torch import nn
 
 from baselines.data.dataset import Events
-from baselines.models.dropout import DropoutScheme, DropoutSite
-from baselines.models.embeddings import EmbeddingInput, EventContentEmbedding
+from baselines.modules.dropout import DropoutScheme, DropoutSite
+from baselines.modules.embeddings import EmbeddingInput, EventContentEmbedding
 
 # Per-layer hidden and cell states, `[B, D]` each.
 LSTMState = list[tuple[torch.Tensor, torch.Tensor]]

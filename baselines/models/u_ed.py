@@ -13,7 +13,7 @@ from baselines.models.autoregressive import (
     DecoderOutput,
     sample_gaussian,
 )
-from baselines.models.dropout import resample_masks, variational_dropout
+from baselines.modules.dropout import resample_masks, variational_dropout
 
 
 @dataclass(frozen=True)

@@ -7,7 +7,7 @@ from omegaconf import DictConfig
 from baselines.data.codec import Codec
 from baselines.data.dataset import Events
 from baselines.models.autoregressive import AutoregressiveSuffixModel, DecoderOutput
-from baselines.models.dropout import standard_dropout
+from baselines.modules.dropout import standard_dropout
 
 
 class EncoderDecoder(AutoregressiveSuffixModel[DecoderOutput]):

@@ -6,7 +6,7 @@ from torch import nn
 
 from baselines.data.codec import Codec
 from baselines.data.dataset import Events
-from baselines.models.dropout import DropoutSite
+from baselines.modules.dropout import DropoutSite
 
 
 class EventContentEmbedding(nn.Module):
